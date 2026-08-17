@@ -200,6 +200,13 @@ window.__ModuleLoader__.load({
 			".dsa-pet-ear{position:absolute;top:-9px;width:18px;height:18px;border-radius:50% 50% 0 0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);border-bottom:none;transform-origin:50% 100%}",
 			".dsa-pet-ear.left{left:3px}",
 			".dsa-pet-ear.right{right:3px}",
+			/* 关闭后的幽灵按钮（点击重新打开月宝） */
+			".dsa-ghost{position:fixed;z-index:2147483000;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.6);box-shadow:0 6px 18px rgba(0,0,0,0.35);opacity:0.8;transition:opacity .15s,transform .15s}",
+			".dsa-ghost:hover{opacity:1;transform:scale(1.08)}",
+			".dsa-ghost-icon{color:#fff;font-size:17px;text-shadow:0 1px 3px rgba(0,0,0,0.4)}",
+			".dsa-ghost-ear{position:absolute;top:-6px;width:11px;height:11px;border-radius:50% 50% 0 0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.6);border-bottom:none}",
+			".dsa-ghost-ear.left{left:2px}",
+			".dsa-ghost-ear.right{right:2px}",
 			"@keyframes dsa-ear-wiggle{from{transform:rotate(-7deg)}to{transform:rotate(7deg)}}",
 			"@keyframes dsa-ear-tilt{0%,100%{transform:translateX(-2px)}50%{transform:translateX(2px)}}",
 			"@keyframes dsa-ear-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}",
@@ -592,8 +599,24 @@ window.__ModuleLoader__.load({
 				return function () { window.removeEventListener("resize", measure); };
 			}, [bubbleText, bubbleMaxW, collapsed, pos]);
 
-			// 已关闭：整个浮窗隐藏（本页会话内，刷新后恢复）
-			if (hidden) return null;
+			// 已关闭：只留一个小幽灵按钮（月宝同款圆脸+耳朵），点击重新打开
+			if (hidden) {
+				return h("div", {
+					className: "dsa-ghost",
+					title: "重新打开月宝",
+					style: { left: petX, top: pos ? pos.y : window.innerHeight - 180 },
+					onPointerDown: onDragStart,
+					onClick: function (e) {
+						e.stopPropagation();
+						if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+						setHidden(false);
+					}
+				}, [
+					h("span", { className: "dsa-ghost-ear left" }),
+					h("span", { className: "dsa-ghost-ear right" }),
+					h("span", { className: "dsa-ghost-icon" }, "♪")
+				]);
+			}
 
 			// 播放模式文案（0=列表循环 / 1=单曲循环 / 2=随机）
 			var playModeLabel = ["循环", "单曲", "随机"][state && typeof state.playMode === "number" ? state.playMode : 0] || "循环";
