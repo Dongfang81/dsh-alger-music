@@ -11,6 +11,11 @@ DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **Alge
 （默认宠物形态 → 播放器 → 搜索/播放/换歌 → 播放模式/收藏 → 播放列表 → 宠物歌词）。
 录制脚本与说明见 [`demo/README.md`](./demo/README.md)。
 
+## 🐰 宠物 IP：月宝 Moony
+
+圆脸 + 耳朵 —— 所有宠物共用圆形脸（可装载照片 / 贴图 / 表情），
+靠不同耳朵的造型 / 颜色 / 动效区分身份。完整定义见 [docs/IP.md](./docs/IP.md)。
+
 ## 许可与致谢
 
 - 本插件（dsh-alger-music）以 **MIT** 许可发布，见 [LICENSE](./LICENSE)。
