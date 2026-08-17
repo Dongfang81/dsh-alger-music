@@ -5,6 +5,12 @@ DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **Alge
 不走浏览器播放、不解析音源，而是**调用你本机 App 自己的本地服务**：
 音质、歌词、下载、EQ 全部由 App 负责，插件只做“控制”。
 
+## 🎬 演示视频
+
+[`demo/dsh-alger-music-demo.mp4`](./demo/dsh-alger-music-demo.mp4)：63 秒功能介绍
+（默认宠物形态 → 播放器 → 搜索/播放/换歌 → 播放模式/收藏 → 播放列表 → 宠物歌词）。
+录制脚本与说明见 [`demo/README.md`](./demo/README.md)。
+
 ## 许可与致谢
 
 - 本插件（dsh-alger-music）以 **MIT** 许可发布，见 [LICENSE](./LICENSE)。
