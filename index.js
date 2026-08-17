@@ -256,6 +256,18 @@ function buildActions(cfg, client) {
 				log(`已安装 AlgerMusicPlayer${ver ? ' ' + ver : ''}，无需重复安装。`);
 				return { ok: true, alreadyInstalled: true, version: ver, steps };
 			}
+			// 若旧版本正在运行，先退出再替换，避免覆盖运行中的 App bundle
+			if (await client.appRunning()) {
+				log('检测到 App 正在运行，先退出…');
+				await client.quitApp();
+				try {
+					await client.waitUntil(() => client.appRunning().then((r) => !r), 'App 退出', 10000, 500);
+				} catch {
+					log('等待退出超时，尝试强制结束');
+					await client.run(['pkill', '-f', cfg.appName]);
+					await new Promise((resolve) => setTimeout(resolve, 1000));
+				}
+			}
 			const release = String(cfg.installRelease || 'v5.1.0').replace(/^v/, 'v');
 			const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
 			const fileName = `AlgerMusicPlayer-${release.replace(/^v/, '')}-mac-${arch}.dmg`;

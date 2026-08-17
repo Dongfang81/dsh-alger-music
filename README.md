@@ -1,6 +1,6 @@
 # dsh-alger-music
 
-DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **AlgerMusicPlayer** 播放网易云音乐。
+DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **AlgerMusicPlayer** 播放/控制音乐。
 
 不走浏览器播放、不解析音源，而是**调用你本机 App 自己的本地服务**：
 音质、歌词、下载、EQ 全部由 App 负责，插件只做“控制”。
@@ -20,7 +20,7 @@ DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **Alge
   （Copyright (c) 2026 Alger）；其内置的 `netease-cloud-music-api-alger` 为 **MIT**，
   上游 [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 为 **ISC**，
   内置解锁模块 `@unblockneteasemusic/server` 为 **LGPL-3.0**（在 App 内部使用，与本插件无关）。
-- 使用本插件前请自行确认：你已安装 AlgerMusicPlayer，并遵守其许可条款及目标平台（网易云音乐）的服务条款。
+- 使用本插件前请自行确认：你已安装 AlgerMusicPlayer，并遵守其许可条款及你所用音乐平台的服务条款。
 
 ## 工作原理
 
@@ -28,7 +28,7 @@ AlgerMusicPlayer 自带的三个本机通道：
 
 | 通道 | 端口 | 用途 |
 | --- | --- | --- |
-| 网易云音乐 API（netease-cloud-music-api） | 30488（仅 127.0.0.1） | 搜索 / 歌曲详情 / 歌词 / 播放地址 / 歌单 |
+| 音乐 API（App 内置） | 30488（仅 127.0.0.1） | 搜索 / 歌曲详情 / 歌词 / 播放地址 / 歌单 |
 | 远程控制（express） | 31888（默认关闭） | 播放/暂停、上一首/下一首、音量±、收藏、当前状态 |
 | CDP 调试口 | 9333（需带参启动） | 点歌：把指定歌曲直接塞进 App 播放器开播 |
 
@@ -53,7 +53,7 @@ AlgerMusicPlayer 自带的三个本机通道：
 | `alger_queue` | 播放列表：`add` 追加单曲 / `add-all` 整批加入 / `add-next` 插入下一首 / `playlist` 整单播放歌单 |
 | `alger_control` | 播放/暂停/切歌/音量/收藏 |
 
-**浮动播放窗口（浏览器右下角，类似网易云插件的小窗）：**
+**浮动播放窗口（浏览器右下角）：**
 - 实时显示当前歌曲 / 歌手 / 播放状态与**播放列表**（每 1.5s 轮询）；
 - 播放/暂停、上一首、下一首、音量±、**收藏**（♥）按钮；
 - 搜索框点歌（歌曲/歌单两种模式）；歌曲结果可**单首加入**或**一键全部加入播放列表**；歌单结果**一键整单播放**；
@@ -88,7 +88,7 @@ dsh plugin --profile web add /path/to/dsh-alger-music   # 或 git 仓库地址
 - id: alger-music
   name: 'dsh-alger-music'
   config:
-    musicApiPort: 30488   # App 内设置的网易云 API 端口
+    musicApiPort: 30488   # App 内设置的音乐 API 端口
     remotePort: 31888     # 远程控制端口
     cdpPort: 9333         # CDP 调试端口（点歌用）
     enableCdp: true       # 是否默认以调试端口启动
