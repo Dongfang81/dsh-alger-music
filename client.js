@@ -135,6 +135,14 @@ window.__ModuleLoader__.load({
 			".dsa-mini .t{font-size:12px;font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis}",
 			".dsa-mini .hint{font-size:10px;color:rgba(255,255,255,0.6)}",
 			".dsa-fav{color:#fda4af}.dsa-fav:hover{background:rgba(244,114,182,0.18)}",
+			".dsa-fav.active{color:#fff;background:linear-gradient(135deg,#ec4899,#f43f5e);box-shadow:0 2px 8px rgba(236,72,153,0.5)}",
+			".dsa-conn{flex:none;display:flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,0.22);border-radius:999px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.85);font-size:10.5px;padding:3px 9px;cursor:pointer;white-space:nowrap}",
+			".dsa-conn:hover{background:rgba(255,255,255,0.16)}",
+			".dsa-conn:disabled{opacity:0.55;cursor:wait}",
+			".dsa-conn .dot{width:7px;height:7px;border-radius:50%;flex:none}",
+			".dsa-conn .dot.ok{background:#34d399;box-shadow:0 0 6px rgba(52,211,153,0.9)}",
+			".dsa-conn .dot.wait{background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,0.9)}",
+			".dsa-conn .dot.bad{background:#ef4444;box-shadow:0 0 6px rgba(239,68,68,0.9)}",
 			".dsa-types{display:flex;gap:4px;margin-top:7px}",
 			".dsa-type{flex:1;border:1px solid rgba(255,255,255,0.18);background:transparent;color:rgba(255,255,255,0.75);border-radius:8px;font-size:11px;padding:3px 0;cursor:pointer}",
 			".dsa-type.active{background:rgba(255,255,255,0.16);border-color:rgba(255,255,255,0.4);color:#fff;font-weight:600}",
@@ -201,12 +209,10 @@ window.__ModuleLoader__.load({
 			pause: "❚❚",
 			prev: "⏮",
 			next: "⏭",
-			volup: "🔊",
-			voldown: "🔉",
-			collapse: "▾",
-			expand: "▸",
-			search: "🔍",
-			refresh: "↻"
+			volup: "+",
+			voldown: "−",
+			collapse: "—",
+			search: "🔍"
 		};
 
 		function readyDot(state) {
@@ -345,11 +351,37 @@ window.__ModuleLoader__.load({
 			};
 
 			var runCommand = function (action) {
-				if (!state || !state.remoteUp) { flash("err", "远程控制未就绪，请先点“一键就绪”"); return; }
+				if (!state || !state.remoteUp) { flash("err", "远程控制未就绪，请先点“连接”"); return; }
 				command(action).then(function (r) {
 					if (r && r.ok === false) flash("err", r.error || "命令失败");
 					setTimeout(refresh, 400);
 				}).catch(function () { flash("err", "命令发送失败"); });
+			};
+
+			// 收藏：发送命令 + 按当前状态给反馈（♥ 状态由轮询的 state.favorite 驱动）
+			var onToggleFavorite = function () {
+				if (!state || !state.remoteUp || !playing) { flash("err", "没有正在播放的歌曲"); return; }
+				var wasFav = Boolean(state.favorite);
+				command("toggle-favorite").then(function (r) {
+					if (r && r.ok === false) { flash("err", r.error || "收藏失败"); return; }
+					flash("ok", wasFav ? "已取消收藏：" + title : "已收藏：" + title);
+					setTimeout(refresh, 400);
+				}).catch(function () { flash("err", "收藏失败"); });
+			};
+
+			// 右上角连接按钮：未安装→一键安装；未就绪→一键就绪；已连接→重查
+			var connLabel = !state
+				? "…"
+				: !state.installed
+					? "安装"
+					: state.remoteUp && state.cdpUp
+						? "已连接"
+						: "连接";
+			var onConnClick = function () {
+				if (!state) return;
+				if (!state.installed) { onInstall(); return; }
+				if (!(state.remoteUp && state.cdpUp)) { onSetup(); return; }
+				refresh();
 			};
 
 			var onSearch = function () {
@@ -602,8 +634,16 @@ window.__ModuleLoader__.load({
 							h("div", { className: "dsa-artist" }, artist)
 						]),
 						h("div", { className: "dsa-actions" }, [
-							h("button", { className: "dsa-btn", title: "刷新", onClick: refresh }, ICONS.refresh),
-							h("button", { className: "dsa-btn", title: collapsed ? "展开" : "折叠", onClick: toggleCollapsed }, ICONS.collapse)
+							// 连接状态 + 连接/安装/就绪按钮（右上角）
+							h("button", {
+								className: "dsa-conn" + (state && state.remoteUp && state.cdpUp ? " on" : ""),
+								disabled: busy,
+								onClick: onConnClick
+							}, [
+								h("span", { className: "dot " + dot }),
+								h("span", null, connLabel)
+							]),
+							h("button", { className: "dsa-btn", title: "收起为宠物", onClick: toggleCollapsed }, ICONS.collapse)
 						])
 					]),
 					// 主体
@@ -620,7 +660,12 @@ window.__ModuleLoader__.load({
 							}, isPlaying ? ICONS.pause : ICONS.play),
 							h("button", { className: "dsa-btn", title: "下一首", disabled: !canControl, onClick: function () { runCommand("next"); } }, ICONS.next),
 							h("button", { className: "dsa-btn", title: "音量+", disabled: !canControl, onClick: function () { runCommand("volume-up"); } }, ICONS.volup),
-							h("button", { className: "dsa-btn dsa-fav", title: "收藏/取消收藏当前歌曲", disabled: !canControl || !playing, onClick: function () { runCommand("toggle-favorite"); } }, "♥")
+							h("button", {
+								className: "dsa-btn dsa-fav" + (state && state.favorite ? " active" : ""),
+								title: "收藏/取消收藏当前歌曲",
+								disabled: !canControl || !playing,
+								onClick: onToggleFavorite
+							}, "♥")
 						]),
 						// 播放列表
 						state && state.queue && Array.isArray(state.queue.items)
@@ -649,23 +694,6 @@ window.__ModuleLoader__.load({
 										: null
 								])
 							: null,
-						// 就绪提示 / 一键安装 / 一键就绪
-						state && !state.installed
-							? h("div", { className: "dsa-ready" }, [
-									h("span", { className: "dot bad" }),
-									h("span", { className: "txt" }, "未安装 AlgerMusicPlayer"),
-									h("button", { className: "act", disabled: busy, onClick: onInstall }, busy ? "安装中…" : "一键安装")
-								])
-							: needSetup(state)
-								? h("div", { className: "dsa-ready" }, [
-										h("span", { className: "dot " + dot }),
-										h("span", { className: "txt" }, readyText(state)),
-										h("button", { className: "act", disabled: busy, onClick: onSetup }, busy ? "处理中…" : "一键就绪")
-									])
-								: h("div", { className: "dsa-ready" }, [
-										h("span", { className: "dot ok" }),
-										h("span", { className: "txt" }, readyText(state) + (state && state.version ? "（" + state.version + "）" : ""))
-									]),
 						// 搜索类型切换
 						h("div", { className: "dsa-types" }, [
 							h("button", { className: "dsa-type" + (searchType === 1 ? " active" : ""), onClick: function () { switchType(1); } }, "歌曲"),

@@ -167,6 +167,7 @@ function buildActions(cfg, client) {
 				remoteControl: readRemoteControlConfig(),
 				playing,
 				playback,
+				favorite: queue && typeof queue.favorite === 'boolean' ? queue.favorite : null,
 				queue: queue && Array.isArray(queue.queue) ? { items: queue.queue, index: queue.index ?? -1 } : null
 			};
 		},
