@@ -1,4 +1,4 @@
-# dsh-alger-music
+# dsh-moony-singer（月宝 Moony）
 
 DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **AlgerMusicPlayer** 播放/控制音乐。
 
@@ -7,7 +7,7 @@ DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **Alge
 
 ## 🎬 演示视频
 
-[`demo/dsh-alger-music-demo.mp4`](./demo/dsh-alger-music-demo.mp4)：63 秒功能介绍
+[`demo/moony-singer-demo.mp4`](./demo/moony-singer-demo.mp4)：63 秒功能介绍
 （默认宠物形态 → 播放器 → 搜索/播放/换歌 → 播放模式/收藏 → 播放列表 → 宠物歌词）。
 录制脚本与说明见 [`demo/README.md`](./demo/README.md)。
 
@@ -18,7 +18,7 @@ DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **Alge
 
 ## 许可与致谢
 
-- 本插件（dsh-alger-music）以 **MIT** 许可发布，见 [LICENSE](./LICENSE)。
+- 本插件（dsh-moony-singer）以 **MIT** 许可发布，见 [LICENSE](./LICENSE)。
 - 本插件是**独立实现的控制/自动化工具**：不包含、不修改、不分发 AlgerMusicPlayer 及其任何依赖的代码，
   仅通过 App 自身提供的本地 HTTP 服务（30488/31888）与 Chromium CDP 调试协议与其互操作。
 - 所驱动的 [AlgerMusicPlayer](https://github.com/algerkong/AlgerMusicPlayer) 以 **MIT** 许可发布
@@ -74,7 +74,7 @@ AlgerMusicPlayer 自带的三个本机通道：
 ## 安装（到 web profile）
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-alger-music   # 或 git 仓库地址
+dsh plugin --profile web add github:Dongfang81/moony-singer   # 或 git 仓库地址
 # 然后重启 dsh web 生效
 ```
 
@@ -83,7 +83,7 @@ dsh plugin --profile web add /path/to/dsh-alger-music   # 或 git 仓库地址
 插件**驱动**开源播放器 AlgerMusicPlayer（播放/登录/歌词/下载都在 App 内，插件只做控制）。
 **新机器无需提前安装 App**，装完插件后全流程自动化：
 
-1. **装插件**：`dsh plugin --profile web add github:Dongfang81/dsh-alger-music` → 重启 dsh web；
+1. **装插件**：`dsh plugin --profile web add github:Dongfang81/moony-singer` → 重启 dsh web；
 2. **装 App**（浮窗右上角按钮显示 **「安装」**，或对话里调 `alger_install`）：
    - 自动按 CPU 架构（arm64/x64）下载官方 DMG（GitHub 直连 + **镜像兜底**，约 130MB）；
    - 校验 DMG 完整性 → 挂载 → 安装进 `/Applications`（若检测到旧版正在运行会先退出，旧版备份为 `.bak`，不删除）→ 清理安装包；
@@ -98,7 +98,7 @@ dsh plugin --profile web add /path/to/dsh-alger-music   # 或 git 仓库地址
 
 ```yaml
 - id: alger-music
-  name: 'dsh-alger-music'
+  name: 'dsh-moony-singer'
   config:
     musicApiPort: 30488   # App 内设置的音乐 API 端口
     remotePort: 31888     # 远程控制端口

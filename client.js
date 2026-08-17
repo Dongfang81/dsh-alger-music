@@ -7,7 +7,7 @@
  * 服务端路由 /dsh-alger/* 中转（本机 30488/31888/CDP 不直接暴露给页面）。
  */
 window.__ModuleLoader__.load({
-	id: "dsh-alger-music",
+	id: "dsh-moony-singer",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * dsh-alger-music 演示视频录制 v2（交互更丰富）。
+ * moony-singer 演示视频录制 v2（交互更丰富）。
  * 默认宠物形态 → 点击展开 → 搜索 → 播放 → 换歌 → 播放模式 → 收藏 → 加入队列 → 播放列表 → 收起宠物（歌词气泡）。
  * 需要系统 ffmpeg 出现在 playwright 缓存路径（demo/pw-cache）。
  */

@@ -26,7 +26,7 @@ import { existsSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-export const name = 'dsh-alger-music';
+export const name = 'dsh-moony-singer';
 export const inject = ['subprocess', 'tools', 'webServer'];
 
 /** 默认配置（可被 cordis.patch.yml 的 config 覆盖）。 */

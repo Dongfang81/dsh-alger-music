@@ -1,8 +1,8 @@
-# dsh-alger-music 组合包补丁：把本地音乐控制插件行插入 profile。
+# dsh-moony-singer 组合包补丁：把本地音乐控制插件行插入 profile。
 # 用户可在自己 profile 的 cordis.patch.yml 里按 id 覆盖整个 config（见 README）。
 - insert:
     - id: alger-music
-      name: 'dsh-alger-music'
+      name: 'dsh-moony-singer'
       config:
         # AlgerMusicPlayer 自带的网易云音乐 API 本地服务端口（App 设置里可改）
         musicApiPort: 30488

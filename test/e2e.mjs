@@ -1,5 +1,5 @@
 /**
- * dsh-alger-music 端到端验证（对真实 AlgerMusicPlayer，全 CDP 路径）。
+ * dsh-moony-singer 端到端验证（对真实 AlgerMusicPlayer，全 CDP 路径）。
  *
  * 沙箱约束：不直接写 App 配置文件，而是通过 CDP 让 App 自己执行
  * `set-store-value('remoteControl', …)` 落盘，再重启 App 使远程控制服务生效。
