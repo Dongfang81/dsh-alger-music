@@ -5,6 +5,17 @@ DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **Alge
 不走浏览器播放、不解析音源，而是**调用你本机 App 自己的本地服务**：
 音质、歌词、下载、EQ 全部由 App 负责，插件只做“控制”。
 
+## 许可与致谢
+
+- 本插件（dsh-alger-music）以 **MIT** 许可发布，见 [LICENSE](./LICENSE)。
+- 本插件是**独立实现的控制/自动化工具**：不包含、不修改、不分发 AlgerMusicPlayer 及其任何依赖的代码，
+  仅通过 App 自身提供的本地 HTTP 服务（30488/31888）与 Chromium CDP 调试协议与其互操作。
+- 所驱动的 [AlgerMusicPlayer](https://github.com/algerkong/AlgerMusicPlayer) 以 **MIT** 许可发布
+  （Copyright (c) 2026 Alger）；其内置的 `netease-cloud-music-api-alger` 为 **MIT**，
+  上游 [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 为 **ISC**，
+  内置解锁模块 `@unblockneteasemusic/server` 为 **LGPL-3.0**（在 App 内部使用，与本插件无关）。
+- 使用本插件前请自行确认：你已安装 AlgerMusicPlayer，并遵守其许可条款及目标平台（网易云音乐）的服务条款。
+
 ## 工作原理
 
 AlgerMusicPlayer 自带的三个本机通道：
