@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 880px; height: 1160px; background: transparent; overflow: hidden; }
+  .bar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 118px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.72));
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+  }
+  .name { color: #fff; font: 600 44px system-ui, -apple-system, "PingFang SC", sans-serif; letter-spacing: .5px; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  .url { color: rgba(255,255,255,.88); font: 400 28px "SF Mono", Menlo, Consolas, monospace; }
+  .author {
+    position: absolute; left: 50%; top: 850px; transform: translateX(-50%);
+    color: #fff; font: 400 34px system-ui, -apple-system, "PingFang SC", sans-serif;
+    background: rgba(0,0,0,0.5); padding: 10px 26px; border-radius: 999px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.35); text-shadow: 0 1px 4px rgba(0,0,0,.5);
+  }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="name">dsh-alger-music</div>
+    <div class="url">github.com/Dongfang81/dsh-alger-music</div>
+  </div>
+  <div class="author">作者：@东方</div>
+</body>
+</html>

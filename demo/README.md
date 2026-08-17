@@ -9,6 +9,8 @@
 
 - 直接播放 `dsh-alger-music-demo.mp4`（H.264，微信/邮件可直接发）。
 - 视频无音轨（headless 录制不采集系统音频，实际播放有声音）。
+- 已裁掉前 20s、叠加文字水印（底部插件名 + GitHub 地址，中间偏下"作者：@东方"），
+  文字图层由 `overlay.html` 生成（`overlay.png` 用 playwright 截图，`omitBackground` 透明背景）。
 
 ## 重新录制
 
