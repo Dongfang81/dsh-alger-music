@@ -207,6 +207,11 @@ window.__ModuleLoader__.load({
 			".dsa-ghost-ear{position:absolute;top:-6px;width:11px;height:11px;border-radius:50% 50% 0 0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.6);border-bottom:none}",
 			".dsa-ghost-ear.left{left:2px}",
 			".dsa-ghost-ear.right{right:2px}",
+			/* 侧边栏宠物开关（设置按钮旁） */
+			".dsa-pet-toggle{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;border:none;background:transparent;color:rgba(255,255,255,0.45);font-size:15px;cursor:pointer;transition:background .12s,color .12s}",
+			".dsa-pet-toggle:hover{background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.85)}",
+			".dsa-pet-toggle.on{color:#60a5fa;background:rgba(96,165,250,0.16)}",
+			".dsa-pet-toggle.on:hover{color:#93c5fd;background:rgba(96,165,250,0.26)}",
 			"@keyframes dsa-ear-wiggle{from{transform:rotate(-7deg)}to{transform:rotate(7deg)}}",
 			"@keyframes dsa-ear-tilt{0%,100%{transform:translateX(-2px)}50%{transform:translateX(2px)}}",
 			"@keyframes dsa-ear-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}",
@@ -260,6 +265,28 @@ window.__ModuleLoader__.load({
 			return state && state.installed && (!state.running || !state.remoteUp || !state.cdpUp);
 		}
 
+		/* ---------- 宠物显示状态（浮窗与侧边栏开关共享） ---------- */
+		var petVis = { hidden: false, subs: [] };
+		function setPetHidden(v) {
+			petVis.hidden = !!v;
+			petVis.subs.forEach(function (fn) { fn(petVis.hidden); });
+		}
+		function onPetHidden(fn) {
+			petVis.subs.push(fn);
+			return function () { petVis.subs = petVis.subs.filter(function (f) { return f !== fn; }); };
+		}
+
+		/* ---------- 侧边栏宠物开关（设置在设置按钮右边） ---------- */
+		function PetToggleButton() {
+			var [hidden, setHidden] = React.useState(petVis.hidden);
+			React.useEffect(function () { return onPetHidden(setHidden); }, []);
+			return h("button", {
+				className: "dsa-pet-toggle" + (hidden ? "" : " on"),
+				title: hidden ? "激活月宝宠物" : "关闭月宝宠物",
+				onClick: function () { setPetHidden(!petVis.hidden); }
+			}, "♪");
+		}
+
 		/* ---------- 浮动播放器 ---------- */
 		function MusicPlayer() {
 			var [state, setState] = React.useState(null);
@@ -276,7 +303,9 @@ window.__ModuleLoader__.load({
 			var [queueOpen, setQueueOpen] = React.useState(false);
 			var [selectedIdx, setSelectedIdx] = React.useState(null); // 播放列表"单击选中"的行
 			var [favOptimistic, setFavOptimistic] = React.useState(null); // 收藏乐观状态（null=跟随真实状态）
-			var [hidden, setHidden] = React.useState(false); // 关闭浮窗（本页会话内隐藏，刷新后恢复）
+			// 关闭/激活与侧边栏开关按钮共享（pub/sub）
+			var [hidden, setHidden] = React.useState(petVis.hidden);
+			React.useEffect(function () { return onPetHidden(setHidden); }, []);
 			var [notice, setNotice] = React.useState(null); // {kind:'ok'|'err'|'', text}
 			var [busy, setBusy] = React.useState(false);
 			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
@@ -609,7 +638,7 @@ window.__ModuleLoader__.load({
 					onClick: function (e) {
 						e.stopPropagation();
 						if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-						setHidden(false);
+						setPetHidden(false);
 					}
 				}, [
 					h("span", { className: "dsa-ghost-ear left" }),
@@ -680,7 +709,7 @@ window.__ModuleLoader__.load({
 					// 头部（拖动手柄）：左=Mac风格红黄按钮，右=连接状态
 					h("div", { className: "dsa-header dsa-drag", onPointerDown: onDragStart }, [
 						h("div", { className: "dsa-traffic" }, [
-							h("button", { className: "dsa-tl close", title: "关闭浮窗", onClick: function (e) { e.stopPropagation(); setHidden(true); } }, "×"),
+							h("button", { className: "dsa-tl close", title: "关闭浮窗", onClick: function (e) { e.stopPropagation(); setPetHidden(true); } }, "×"),
 							h("button", { className: "dsa-tl min", title: "收起为宠物（最小化）", onClick: function (e) { e.stopPropagation(); toggleCollapsed(); } }, "–")
 						]),
 						h("div", { className: "dsa-cover" },
@@ -838,12 +867,21 @@ window.__ModuleLoader__.load({
 					if (root.parentNode) root.parentNode.removeChild(root);
 				};
 			});
+			// 侧边栏设置按钮右边的宠物开关
+			if (ctx.slots) {
+				ctx.slots.inject('sidebar.settings', function () {
+					return ctx.slots.register(
+						{ name: 'sidebar.settings', id: 'moony-singer-pet-toggle', order: 999 },
+						function () { return h(PetToggleButton); }
+					);
+				});
+			}
 		}
 
 		var inject = [];
 		exports.apply = apply;
 		exports.inject = inject;
-		exports.name = "dsh-alger-music";
+		exports.name = "dsh-moony-singer";
 		exports.parseLrc = parseLrc;
 		return module.exports;
 	}
