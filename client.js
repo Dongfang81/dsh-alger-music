@@ -252,6 +252,7 @@ window.__ModuleLoader__.load({
 			var [results, setResults] = React.useState(null);
 			var [queueOpen, setQueueOpen] = React.useState(false);
 			var [selectedIdx, setSelectedIdx] = React.useState(null); // 播放列表"单击选中"的行
+			var [favOptimistic, setFavOptimistic] = React.useState(null); // 收藏乐观状态（null=跟随真实状态）
 			var [notice, setNotice] = React.useState(null); // {kind:'ok'|'err'|'', text}
 			var [busy, setBusy] = React.useState(false);
 			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
@@ -358,15 +359,16 @@ window.__ModuleLoader__.load({
 				}).catch(function () { flash("err", "命令发送失败"); });
 			};
 
-			// 收藏：发送命令 + 按当前状态给反馈（♥ 状态由轮询的 state.favorite 驱动）
+			// 收藏：乐观更新——点击立即变红/变白（不等轮询），不弹文字；命令失败才提示
 			var onToggleFavorite = function () {
 				if (!state || !state.remoteUp || !playing) { flash("err", "没有正在播放的歌曲"); return; }
-				var wasFav = Boolean(state.favorite);
+				var target = !(favOptimistic !== null ? favOptimistic : Boolean(state.favorite));
+				setFavOptimistic(target);
+				setTimeout(function () { setFavOptimistic(null); }, 2500); // 2.5s 后由轮询的真实状态接管
 				command("toggle-favorite").then(function (r) {
-					if (r && r.ok === false) { flash("err", r.error || "收藏失败"); return; }
-					flash("ok", wasFav ? "已取消收藏：" + title : "已收藏：" + title);
-					setTimeout(refresh, 400);
-				}).catch(function () { flash("err", "收藏失败"); });
+					if (r && r.ok === false) { setFavOptimistic(null); flash("err", r.error || "收藏失败"); return; }
+					setTimeout(refresh, 300);
+				}).catch(function () { setFavOptimistic(null); flash("err", "收藏失败"); });
 			};
 
 			// 右上角连接按钮：未安装→一键安装；未就绪→一键就绪；已连接→重查
@@ -661,7 +663,7 @@ window.__ModuleLoader__.load({
 							h("button", { className: "dsa-btn", title: "下一首", disabled: !canControl, onClick: function () { runCommand("next"); } }, ICONS.next),
 							h("button", { className: "dsa-btn", title: "音量+", disabled: !canControl, onClick: function () { runCommand("volume-up"); } }, ICONS.volup),
 							h("button", {
-								className: "dsa-btn dsa-fav" + (state && state.favorite ? " active" : ""),
+								className: "dsa-btn dsa-fav" + ((favOptimistic !== null ? favOptimistic : Boolean(state && state.favorite)) ? " active" : ""),
 								title: "收藏/取消收藏当前歌曲",
 								disabled: !canControl || !playing,
 								onClick: onToggleFavorite
