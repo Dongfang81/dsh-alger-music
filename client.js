@@ -156,11 +156,16 @@ window.__ModuleLoader__.load({
 			".dsa-rowbtn:hover{background:rgba(255,255,255,0.22)}",
 			".dsa-rowbtn:disabled{opacity:0.5;cursor:not-allowed}",
 			".dsa-rowbtn.play{background:linear-gradient(135deg,#3b82f6,#6366f1)}",
-			/* ---- 宠物（收起态） ---- */
-			".dsa-pet-wrap{position:fixed;z-index:2147483000;display:flex;flex-direction:column;align-items:center;user-select:none}",
-			".dsa-pet-bubble{position:relative;margin-bottom:10px;max-width:230px;background:rgba(13,15,24,0.9);border:1px solid rgba(255,255,255,0.22);border-radius:14px;padding:7px 12px;font-size:12px;line-height:1.4;color:#fff;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.35);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}",
+			/* ---- 宠物（收起态）：宠物固定，气泡锚定在左/右侧（自动换边） ---- */
+			".dsa-pet-wrap{position:fixed;z-index:2147483000;width:64px;height:64px;user-select:none}",
+			".dsa-pet-bubble-pos{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center}",
+			".dsa-pet-bubble-pos.right{left:74px}",
+			".dsa-pet-bubble-pos.left{right:74px}",
+			".dsa-pet-bubble{position:relative;background:rgba(13,15,24,0.9);border:1px solid rgba(255,255,255,0.22);border-radius:14px;padding:7px 12px;font-size:12px;line-height:1.4;color:#fff;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.35);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}",
 			".dsa-pet-bubble.sing{animation:dsa-bubble-bob .5s ease-in-out infinite alternate}",
-			".dsa-pet-bubble-tail{position:absolute;left:50%;bottom:-7px;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid rgba(255,255,255,0.22);transform:translateX(-50%)}",
+			".dsa-pet-bubble-tail{position:absolute;top:50%;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;transform:translateY(-50%)}",
+			".dsa-pet-bubble-pos.right .dsa-pet-bubble-tail{left:-7px;border-right:7px solid rgba(13,15,24,0.9)}",
+			".dsa-pet-bubble-pos.left .dsa-pet-bubble-tail{right:-7px;border-left:7px solid rgba(13,15,24,0.9)}",
 			".dsa-pet{position:relative;width:64px;height:64px;border-radius:50%;cursor:grab;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);box-shadow:0 8px 26px rgba(0,0,0,0.45);overflow:visible}",
 			".dsa-pet:active{cursor:grabbing}",
 			".dsa-pet.singing{animation:dsa-pet-bob .55s ease-in-out infinite alternate}",
@@ -461,21 +466,57 @@ window.__ModuleLoader__.load({
 				}).catch(function () { /* 保留旧头像 */ });
 			}, [artistId]);
 
+			// 折叠态宠物：气泡换边状态（hooks 必须无条件声明，不能在 if 里）
+			var bubbleRef = React.useRef(null);
+			var [bubbleSide, setBubbleSide] = React.useState("right"); // 气泡在宠物右侧/左侧
+			var [bubbleMaxW, setBubbleMaxW] = React.useState(230);
+			// 歌词行与宠物锚点（展开/收起都计算，供测宽 effect 使用）
+			var position = state && state.playback ? state.playback.position : null;
+			var line = currentLrcLine(lrc, position);
+			var bubbleText = line && line.text
+				? line.text
+				: (playing ? title + (artist ? " · " + artist : "") : "未在播放");
+			var petX = pos ? pos.x : window.innerWidth - 110; // 与渲染用的默认位置一致
+			// 宠物固定不动；气泡锚定右侧，右侧放不下则自动换到左侧（含宽度钳制）
+			React.useEffect(function () {
+				if (!collapsed || !bubbleRef.current) return;
+				var measure = function () {
+					var el = bubbleRef.current;
+					if (!el) return;
+					var w = el.offsetWidth || 120;
+					var GAP = 12;
+					var petW = 64;
+					var MARGIN = 8;
+					var spaceRight = window.innerWidth - (petX + petW + GAP) - MARGIN;
+					var side = spaceRight >= w ? "right" : "left";
+					var max = side === "right" ? spaceRight : petX - GAP - MARGIN;
+					max = Math.max(120, Math.min(230, Math.floor(max)));
+					setBubbleSide(function (prev) { return prev === side ? prev : side; });
+					setBubbleMaxW(function (prev) { return prev === max ? prev : max; });
+				};
+				measure();
+				window.addEventListener("resize", measure);
+				return function () { window.removeEventListener("resize", measure); };
+			}, [bubbleText, collapsed, pos]);
+
 			// 折叠态：会唱歌的宠物（作者形象 + 歌词气泡）
 			if (collapsed) {
-				var position = state && state.playback ? state.playback.position : null;
-				var line = currentLrcLine(lrc, position);
-				var bubbleText = line && line.text
-					? line.text
-					: (playing ? title + (artist ? " · " + artist : "") : "未在播放");
 				var petImg = artistInfo && artistInfo.avatar ? artistInfo.avatar : (playing ? playing.albumPic : null);
 				return h("div", {
 					className: "dsa-pet-wrap",
-					style: { left: pos ? pos.x : window.innerWidth - 110, top: pos ? pos.y : window.innerHeight - 180 }
+					style: { left: petX, top: pos ? pos.y : window.innerHeight - 180 }
 				}, [
-					h("div", { className: "dsa-pet-bubble" + (isPlaying ? " sing" : "") }, [
-						h("span", null, bubbleText || "♪ ~ ♪ ~ ♪"),
-						h("span", { className: "dsa-pet-bubble-tail" })
+					h("div", {
+						ref: bubbleRef,
+						className: "dsa-pet-bubble-pos " + bubbleSide
+					}, [
+						h("div", {
+							className: "dsa-pet-bubble" + (isPlaying ? " sing" : ""),
+							style: { maxWidth: bubbleMaxW }
+						}, [
+							h("span", null, bubbleText || "♪ ~ ♪ ~ ♪"),
+							h("span", { className: "dsa-pet-bubble-tail" })
+						])
 					]),
 					isPlaying
 						? h("div", { className: "dsa-pet-notes" }, [h("span", null, "♪"), h("span", null, "♫"), h("span", null, "♪")])
