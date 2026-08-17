@@ -44,16 +44,31 @@ window.__ModuleLoader__.load({
 		var getLyric = function (id) { return post("/dsh-alger/lyric", { id: id }); };
 		var getArtist = function (id) { return post("/dsh-alger/artist", { id: id }); };
 
-		/* ---------- LRC 解析与歌词行定位 ---------- */
+		/* ---------- LRC 解析与歌词行定位 ----------
+		 * 历史事故（教训）：同一个全局正则对象绝不能在 exec() 循环里又被 replace() 使用
+		 * （replace 会重置 lastIndex → exec 反复命中同一处 → 无限循环 → 渲染进程崩溃），
+		 * 也不能跨行共享 lastIndex（时间戳结束在行尾时残留 lastIndex 会吞掉后续所有行）。
+		 * 因此：每行使用独立正则对象，显式重置 lastIndex，并加行数/匹配数上限兜底。
+		 */
 		function parseLrc(text) {
 			var lines = [];
-			var re = /\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
+			var MAX_LINES = 5000;
+			var MAX_TS_PER_LINE = 50;
 			String(text || "").split("\n").forEach(function (line) {
+				if (lines.length >= MAX_LINES) return;
+				// 1) 每行独立的时间戳正则（绝不复用全局对象）
+				var tsRe = /\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
+				var ts = [];
 				var m;
-				while ((m = re.exec(line))) {
-					var frac = m[3] ? Number(String(m[3]).padEnd(3, "0")) / 1000 : 0;
-					lines.push({ t: Number(m[1]) * 60 + Number(m[2]) + frac, text: line.replace(re, "").trim() });
-				}
+				tsRe.lastIndex = 0;
+				while (ts.length < MAX_TS_PER_LINE && (m = tsRe.exec(line))) ts.push(m);
+				if (ts.length === 0) return;
+				// 2) 去标签用另一个新正则字面量（与 tsRe 互不影响）
+				var text2 = line.replace(/\[[^\]]*\]/g, "").trim();
+				ts.forEach(function (t) {
+					var frac = t[3] ? Number(String(t[3]).padEnd(3, "0")) / 1000 : 0;
+					lines.push({ t: Number(t[1]) * 60 + Number(t[2]) + frac, text: text2 });
+				});
 			});
 			lines.sort(function (a, b) { return a.t - b.t; });
 			return lines;
@@ -640,6 +655,7 @@ window.__ModuleLoader__.load({
 		exports.apply = apply;
 		exports.inject = inject;
 		exports.name = "dsh-alger-music";
+		exports.parseLrc = parseLrc;
 		return module.exports;
 	}
 });
