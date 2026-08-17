@@ -102,9 +102,16 @@ function normalize(s) {
 /**
  * 所有业务动作（工具与 Web 路由共用）。
  */
-function buildActions(cfg, client) {
+function buildActions(cfg, client, shared) {
 	// 已安装版本（缓存 60s，避免状态轮询时反复 spawn）
 	let versionCache = { value: null, at: 0 };
+	// 宠物台词/通知（agent → 宠物气泡，约 6 秒）
+	const noticeStore = { text: '', until: 0 };
+	shared.setNotice = (text, ms = 6000) => {
+		noticeStore.text = String(text ?? '').slice(0, 80);
+		noticeStore.until = Date.now() + ms;
+	};
+	shared.getNotice = () => (noticeStore.until > Date.now() ? noticeStore.text : null);
 	async function installedVersion() {
 		if (!client.appInstalled()) return null;
 		if (versionCache.value && Date.now() - versionCache.at < 60000) return versionCache.value;
@@ -169,8 +176,18 @@ function buildActions(cfg, client) {
 				playback,
 				favorite: queue && typeof queue.favorite === 'boolean' ? queue.favorite : null,
 				playMode: queue && typeof queue.playMode === 'number' ? queue.playMode : null,
+				notice: shared.getNotice ? shared.getNotice() : null,
+				agentStatus: shared.getAgentStatus ? shared.getAgentStatus() : 'idle',
 				queue: queue && Array.isArray(queue.queue) ? { items: queue.queue, index: queue.index ?? -1 } : null
 			};
+		},
+
+		/** alger_say：让宠物开口说一句话（气泡提示约 6 秒） */
+		async say(args) {
+			const text = String(args?.text ?? '').trim();
+			if (!text) throw new Error('请提供要说的台词 text（50 字以内）。');
+			shared.setNotice(text);
+			return { ok: true, text };
 		},
 
 		/** alger_setup */
@@ -523,6 +540,7 @@ function buildActions(cfg, client) {
 				/* 确认超时不算失败（App 可能仍在缓冲） */
 			}
 			log(confirmed ? 'App 状态已确认正在播放该曲' : '已下发播放指令（App 状态暂未确认，可能仍在缓冲）');
+			shared.setNotice('♪ 已播放：' + song.name);
 			return { ok: true, steps, playedName: song.name, playedId: song.id, confirmed };
 		},
 
@@ -613,6 +631,11 @@ function buildActions(cfg, client) {
 			}
 			steps.push(...(out?.steps || []));
 			if (!out?.ok) return { ok: false, steps, guidance: out?.error || '播放列表操作失败' };
+			shared.setNotice(
+				mode === 'replace'
+					? '♫ 整单播放：' + (out.playedName || out.added + ' 首')
+					: '＋ 已加入播放列表 ' + out.added + ' 首'
+			);
 			return { ok: true, steps, mode, added: out.added, queueLength: out.queueLength, playedName: out.playedName ?? null };
 		},
 
@@ -919,7 +942,25 @@ function buildTools(cfg, actions) {
 		timeoutMs: cfg.timeoutMs
 	};
 
-	return [status, setup, install, search, song, playlist, play, queue, control];
+	const say = {
+		name: 'alger_say',
+		description:
+			'让右下角的音乐宠物开口说一句话（宠物气泡提示约 6 秒），用于播报点歌/状态/鼓励等。台词要简短。',
+		parameters: compileParameters({
+			text: { type: 'string', required: true, description: '让宠物说的台词，50 字以内。' }
+		}),
+		output: {
+			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+			render: (_args, value) => {
+				const rec = asRecord(value);
+				return ['宠物说：「' + (rec.text || '') + '」'];
+			}
+		},
+		execute: (rawArgs) => actions.say(asRecord(rawArgs)),
+		timeoutMs: cfg.timeoutMs
+	};
+
+	return [status, setup, install, search, song, playlist, play, queue, control, say];
 }
 
 /** 读取 POST body（JSON 文本）。 */
@@ -964,6 +1005,18 @@ function registerRoutes(webServer, actions) {
 				try {
 					const body = JSON.parse((await readBody(req)) || '{}');
 					json(res, await actions.control(body));
+				} catch (error) {
+					json(res, { ok: false, error: String((error && error.message) || error) });
+				}
+			}
+		},
+		{
+			kind: 'exact',
+			path: '/dsh-alger/say',
+			handler: async (req, res) => {
+				try {
+					const body = JSON.parse((await readBody(req)) || '{}');
+					json(res, await actions.say(body));
 				} catch (error) {
 					json(res, { ok: false, error: String((error && error.message) || error) });
 				}
@@ -1074,7 +1127,57 @@ export function apply(ctx, config) {
 	// 用箭头包装保持 this 指向 subprocess 服务实例。
 	const spawn = (spec) => ctx.subprocess.spawn(spec);
 	const client = createClient(cfg, spawn);
-	const actions = buildActions(cfg, client);
+
+	// agent 状态跟踪（Codex Pets 式：宠物反映 DSH 在做啥）——订阅宿主事件
+	const shared = {};
+	const agentState = new Map();
+	function sidOf(x) {
+		if (!x) return undefined;
+		if (typeof x === 'string') return x;
+		if (typeof x.id === 'string') return x.id;
+		if (typeof x.sessionId === 'string') return x.sessionId;
+		if (x.agent) return sidOf(x.agent);
+		if (x.session) return sidOf(x.session);
+		if (x.info && typeof x.info === 'object') return sidOf(x.info);
+		if (x.exec && typeof x.exec === 'object') return sidOf(x.exec);
+		return undefined;
+	}
+	function markAgent(sid, patch) {
+		if (!sid) return;
+		const e = agentState.get(sid) || { status: 'idle', lastActivity: 0 };
+		agentState.set(sid, { ...e, ...patch, lastActivity: Date.now() });
+	}
+	if (typeof ctx.on === 'function') {
+		ctx.on('agent/status', (p) => markAgent(sidOf(p && p.agent), { status: p && p.status === 'running' ? 'running' : 'idle' }));
+		ctx.on('agent/turn-stopping', (p) => markAgent(sidOf(p && p.agent), { status: 'review' }));
+		ctx.on('agent/error', (p) => markAgent(sidOf(p && p.agent), { status: 'failed' }));
+		ctx.on('approval/request', (req, next) => {
+			const sid = sidOf(req);
+			markAgent(sid, { status: 'waiting' });
+			const pr = Promise.resolve(next());
+			pr.then(
+				() => markAgent(sid, { status: 'idle' }),
+				() => markAgent(sid, { status: 'idle' })
+			);
+			return pr;
+		});
+	}
+	// 取最近活跃会话的状态（超过 60s 未活动视为空闲）
+	shared.getAgentStatus = () => {
+		const now = Date.now();
+		let best = 'idle';
+		let bestT = -Infinity;
+		for (const e of agentState.values()) {
+			if (now - e.lastActivity > 60000) continue;
+			if (e.lastActivity > bestT) {
+				bestT = e.lastActivity;
+				best = e.status;
+			}
+		}
+		return best;
+	};
+
+	const actions = buildActions(cfg, client, shared);
 	const disposers = [];
 	for (const definition of buildTools(cfg, actions)) {
 		disposers.push(ctx.tools.register(definition));

@@ -178,6 +178,9 @@ window.__ModuleLoader__.load({
 			".dsa-pet-bubble-pos.left{right:74px}",
 			".dsa-pet-bubble{position:relative;background:rgba(13,15,24,0.9);border:1px solid rgba(255,255,255,0.22);border-radius:14px;padding:7px 12px;font-size:12px;line-height:1.4;color:#fff;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.35);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}",
 			".dsa-pet-bubble.sing{animation:dsa-bubble-bob .5s ease-in-out infinite alternate}",
+			".dsa-pet-bubble.notice{background:rgba(16,45,34,0.92);border-color:rgba(52,211,153,0.55);color:#a7f3d0;font-weight:600}",
+			".dsa-pet-bubble-pos.right .dsa-pet-bubble.notice + .dsa-pet-bubble-tail,.dsa-pet-bubble.notice ~ .dsa-pet-bubble-tail{border-right-color:rgba(16,45,34,0.92)}",
+			".dsa-pet-bubble-pos.left .dsa-pet-bubble.notice ~ .dsa-pet-bubble-tail{border-left-color:rgba(16,45,34,0.92)}",
 			".dsa-pet-bubble .dsa-marquee{display:flex;width:max-content;animation-name:dsa-marquee;animation-timing-function:linear;animation-iteration-count:infinite;will-change:transform}",
 			".dsa-pet-bubble .dsa-marquee span{white-space:nowrap;padding-right:28px}",
 			"@keyframes dsa-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}",
@@ -187,6 +190,12 @@ window.__ModuleLoader__.load({
 			".dsa-pet{position:relative;width:64px;height:64px;border-radius:50%;cursor:grab;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);box-shadow:0 8px 26px rgba(0,0,0,0.45);overflow:visible}",
 			".dsa-pet:active{cursor:grabbing}",
 			".dsa-pet.singing{animation:dsa-pet-bob .55s ease-in-out infinite alternate}",
+			/* agent 状态光环（Codex Pets 式：宠物反映 DSH 在做啥） */
+			".dsa-pet.dsa-agent-running{box-shadow:0 0 0 3px rgba(59,130,246,0.75),0 8px 26px rgba(0,0,0,0.45);animation:dsa-pet-bob .55s ease-in-out infinite alternate,dsa-agent-pulse 1.3s ease-in-out infinite}",
+			".dsa-pet.dsa-agent-waiting{box-shadow:0 0 0 3px rgba(245,158,11,0.8),0 8px 26px rgba(0,0,0,0.45)}",
+			".dsa-pet.dsa-agent-failed{box-shadow:0 0 0 3px rgba(239,68,68,0.8),0 8px 26px rgba(0,0,0,0.45)}",
+			".dsa-pet.dsa-agent-review{box-shadow:0 0 0 3px rgba(52,211,153,0.8),0 8px 26px rgba(0,0,0,0.45)}",
+			"@keyframes dsa-agent-pulse{0%,100%{box-shadow:0 0 0 3px rgba(59,130,246,0.45),0 8px 26px rgba(0,0,0,0.45)}50%{box-shadow:0 0 0 6px rgba(59,130,246,0.8),0 8px 26px rgba(0,0,0,0.45)}}",
 			".dsa-pet-face{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}",
 			".dsa-pet-emoji{font-size:28px}",
 			".dsa-pet-ear{position:absolute;top:-9px;width:18px;height:18px;border-radius:50% 50% 0 0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);border-bottom:none}",
@@ -542,9 +551,13 @@ window.__ModuleLoader__.load({
 			// 歌词行与宠物锚点（展开/收起都计算，供测宽 effect 使用）
 			var position = state && state.playback ? state.playback.position : null;
 			var line = currentLrcLine(lrc, position);
-			var bubbleText = line && line.text
-				? line.text
-				: (playing ? title + (artist ? " · " + artist : "") : "未在播放");
+			// 宠物台词/通知优先（agent 播报），其次歌词
+			var isNotice = Boolean(state && state.notice);
+			var bubbleText = isNotice
+				? state.notice
+				: (line && line.text
+					? line.text
+					: (playing ? title + (artist ? " · " + artist : "") : "未在播放"));
 			var petX = pos ? pos.x : window.innerWidth - 110; // 与渲染用的默认位置一致
 			var marqueeDur = Math.max(6, Math.min(20, (bubbleText || "").length * 0.35)); // 流动速度随词长
 			// 宠物固定不动；气泡锚定右侧，宠物靠右（右侧可用空间不足阈值）则稳定换到左侧。
@@ -594,7 +607,10 @@ window.__ModuleLoader__.load({
 						className: "dsa-pet-bubble-pos " + bubbleSide
 					}, [
 						h("div", {
-							className: "dsa-pet-bubble" + (isPlaying ? " sing" : "") + (overflowing ? " flowing" : ""),
+							className: "dsa-pet-bubble" +
+								(isPlaying ? " sing" : "") +
+								(overflowing ? " flowing" : "") +
+								(isNotice ? " notice" : ""),
 							style: { maxWidth: bubbleMaxW }
 						}, [
 							overflowing
@@ -610,7 +626,9 @@ window.__ModuleLoader__.load({
 						? h("div", { className: "dsa-pet-notes" }, [h("span", null, "♪"), h("span", null, "♫"), h("span", null, "♪")])
 						: null,
 					h("div", {
-						className: "dsa-pet" + (isPlaying ? " singing" : ""),
+						className: "dsa-pet" +
+							(isPlaying ? " singing" : "") +
+							(state && state.agentStatus && state.agentStatus !== "idle" ? " dsa-agent-" + state.agentStatus : ""),
 						title: "展开播放器",
 						onPointerDown: onDragStart,
 						onClick: function (e) {
