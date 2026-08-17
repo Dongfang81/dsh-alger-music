@@ -41,6 +41,32 @@ window.__ModuleLoader__.load({
 		var queueApi = function (payload) { return post("/dsh-alger/queue", payload); };
 		var setupApp = function (action) { return post("/dsh-alger/setup", { action: action }); };
 		var installApp = function () { return post("/dsh-alger/install", {}); };
+		var getLyric = function (id) { return post("/dsh-alger/lyric", { id: id }); };
+		var getArtist = function (id) { return post("/dsh-alger/artist", { id: id }); };
+
+		/* ---------- LRC 解析与歌词行定位 ---------- */
+		function parseLrc(text) {
+			var lines = [];
+			var re = /\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
+			String(text || "").split("\n").forEach(function (line) {
+				var m;
+				while ((m = re.exec(line))) {
+					var frac = m[3] ? Number(String(m[3]).padEnd(3, "0")) / 1000 : 0;
+					lines.push({ t: Number(m[1]) * 60 + Number(m[2]) + frac, text: line.replace(re, "").trim() });
+				}
+			});
+			lines.sort(function (a, b) { return a.t - b.t; });
+			return lines;
+		}
+		function currentLrcLine(lrc, position) {
+			if (!lrc || lrc.length === 0 || typeof position !== "number") return null;
+			var cur = null;
+			for (var i = 0; i < lrc.length; i++) {
+				if (lrc[i].t <= position) cur = lrc[i];
+				else break;
+			}
+			return cur;
+		}
 
 		/* ---------- 样式 ---------- */
 		var CSS = [
@@ -114,7 +140,27 @@ window.__ModuleLoader__.load({
 			".dsa-rowbtn{flex:none;border:none;border-radius:7px;background:rgba(255,255,255,0.12);color:#fff;font-size:10px;padding:2px 7px;cursor:pointer}",
 			".dsa-rowbtn:hover{background:rgba(255,255,255,0.22)}",
 			".dsa-rowbtn:disabled{opacity:0.5;cursor:not-allowed}",
-			".dsa-rowbtn.play{background:linear-gradient(135deg,#3b82f6,#6366f1)}"
+			".dsa-rowbtn.play{background:linear-gradient(135deg,#3b82f6,#6366f1)}",
+			/* ---- 宠物（收起态） ---- */
+			".dsa-pet-wrap{position:fixed;z-index:2147483000;display:flex;flex-direction:column;align-items:center;user-select:none}",
+			".dsa-pet-bubble{position:relative;margin-bottom:10px;max-width:230px;background:rgba(13,15,24,0.9);border:1px solid rgba(255,255,255,0.22);border-radius:14px;padding:7px 12px;font-size:12px;line-height:1.4;color:#fff;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.35);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}",
+			".dsa-pet-bubble.sing{animation:dsa-bubble-bob .5s ease-in-out infinite alternate}",
+			".dsa-pet-bubble-tail{position:absolute;left:50%;bottom:-7px;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid rgba(255,255,255,0.22);transform:translateX(-50%)}",
+			".dsa-pet{position:relative;width:64px;height:64px;border-radius:50%;cursor:grab;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);box-shadow:0 8px 26px rgba(0,0,0,0.45);overflow:visible}",
+			".dsa-pet:active{cursor:grabbing}",
+			".dsa-pet.singing{animation:dsa-pet-bob .55s ease-in-out infinite alternate}",
+			".dsa-pet-face{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}",
+			".dsa-pet-emoji{font-size:28px}",
+			".dsa-pet-ear{position:absolute;top:-9px;width:18px;height:18px;border-radius:50% 50% 0 0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);border-bottom:none}",
+			".dsa-pet-ear.left{left:3px}",
+			".dsa-pet-ear.right{right:3px}",
+			".dsa-pet-notes{position:absolute;top:-24px;right:-10px;display:flex;gap:2px;font-size:14px;color:#fbbf24;pointer-events:none;text-shadow:0 1px 4px rgba(0,0,0,0.5)}",
+			".dsa-pet-notes span{animation:dsa-note-float 1.3s ease-in-out infinite}",
+			".dsa-pet-notes span:nth-child(2){animation-delay:.35s}",
+			".dsa-pet-notes span:nth-child(3){animation-delay:.7s}",
+			"@keyframes dsa-pet-bob{from{transform:translateY(0)}to{transform:translateY(-6px)}}",
+			"@keyframes dsa-bubble-bob{from{transform:translateY(0)}to{transform:translateY(-2px)}}",
+			"@keyframes dsa-note-float{0%{transform:translateY(0);opacity:0}30%{opacity:1}100%{transform:translateY(-14px);opacity:0}}"
 		].join("\n");
 
 		function injectCss() {
@@ -176,7 +222,12 @@ window.__ModuleLoader__.load({
 			var [queueOpen, setQueueOpen] = React.useState(false);
 			var [notice, setNotice] = React.useState(null); // {kind:'ok'|'err'|'', text}
 			var [busy, setBusy] = React.useState(false);
+			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
+			var [artistInfo, setArtistInfo] = React.useState(null); // {id, avatar}
 			var noticeTimer = React.useRef(null);
+			var lrcFor = React.useRef(null); // 已取歌词的 songId
+			var artistFor = React.useRef(null); // 已取头像的 artistId
+			var suppressClickRef = React.useRef(false);
 
 			var flash = function (kind, text) {
 				setNotice({ kind: kind || "", text: text });
@@ -238,6 +289,7 @@ window.__ModuleLoader__.load({
 					var dy = ev.clientY - drag.startY;
 					if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
 					drag.moved = true;
+					suppressClickRef.current = true;
 					var baseX = drag.origX !== null ? drag.origX : window.innerWidth - WIDTH - 18;
 					var baseY = drag.origY !== null ? drag.origY : window.innerHeight - 120;
 					posRef.current = { x: baseX + dx, y: baseY + dy };
@@ -367,26 +419,69 @@ window.__ModuleLoader__.load({
 				if (event.key === "Enter") onSearch();
 			};
 
-			var playing = state && state.playing ? state.playing : null;
+			// 播放信息：state.playing = {ok, isPlaying, song:{...}}
+			var remote = state && state.playing ? state.playing : null;
+			var playing = remote && remote.song ? remote.song : null;
+			var isPlaying = Boolean(remote && remote.isPlaying);
 			var dot = readyDot(state);
 			var title = playing ? playing.name : "未在播放";
 			var artist = playing ? (playing.artists || "") : (state && state.running ? "AlgerMusicPlayer" : "播放器未连接");
 			var canControl = Boolean(state && state.remoteUp);
 
-			// 折叠态：迷你胶囊
+			// 切歌时拉歌词与作者头像
+			var songId = playing ? playing.id : null;
+			var artistId = playing && playing.artistList && playing.artistList[0] ? playing.artistList[0].id : null;
+			React.useEffect(function () {
+				if (!songId || lrcFor.current === songId) return;
+				lrcFor.current = songId;
+				getLyric(songId).then(function (r) {
+					setLrc(r && r.lyric ? parseLrc(r.lyric) : []);
+				}).catch(function () { setLrc([]); });
+			}, [songId]);
+			React.useEffect(function () {
+				if (!artistId || artistFor.current === artistId) return;
+				artistFor.current = artistId;
+				getArtist(artistId).then(function (r) {
+					if (r && r.ok && r.avatar) setArtistInfo({ id: artistId, avatar: r.avatar });
+				}).catch(function () { /* 保留旧头像 */ });
+			}, [artistId]);
+
+			// 折叠态：会唱歌的宠物（作者形象 + 歌词气泡）
 			if (collapsed) {
-				return h("div", { style: { position: "fixed", left: pos ? pos.x : window.innerWidth - 240, top: pos ? pos.y : window.innerHeight - 56, zIndex: 2147483000 } },
+				var position = state && state.playback ? state.playback.position : null;
+				var line = currentLrcLine(lrc, position);
+				var bubbleText = line && line.text
+					? line.text
+					: (playing ? title + (artist ? " · " + artist : "") : "未在播放");
+				var petImg = artistInfo && artistInfo.avatar ? artistInfo.avatar : (playing ? playing.albumPic : null);
+				return h("div", {
+					className: "dsa-pet-wrap",
+					style: { left: pos ? pos.x : window.innerWidth - 110, top: pos ? pos.y : window.innerHeight - 180 }
+				}, [
+					h("div", { className: "dsa-pet-bubble" + (isPlaying ? " sing" : "") }, [
+						h("span", null, bubbleText || "♪ ~ ♪ ~ ♪"),
+						h("span", { className: "dsa-pet-bubble-tail" })
+					]),
+					isPlaying
+						? h("div", { className: "dsa-pet-notes" }, [h("span", null, "♪"), h("span", null, "♫"), h("span", null, "♪")])
+						: null,
 					h("div", {
-						className: "dsa-mini",
+						className: "dsa-pet" + (isPlaying ? " singing" : ""),
 						title: "展开播放器",
 						onPointerDown: onDragStart,
-						onClick: function (e) { e.stopPropagation(); toggleCollapsed(); }
+						onClick: function (e) {
+							e.stopPropagation();
+							if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+							toggleCollapsed();
+						}
 					}, [
-						h("span", { className: "dot " + dot }),
-						h("span", { className: "t" }, title),
-						h("span", { className: "hint" }, playing && playing.isPlaying ? "播放中" : "")
+						h("span", { className: "dsa-pet-ear left" }),
+						h("span", { className: "dsa-pet-ear right" }),
+						petImg
+							? h("img", { className: "dsa-pet-face", src: petImg, alt: "", draggable: false })
+							: h("span", { className: "dsa-pet-emoji" }, "🎵")
 					])
-				);
+				]);
 			}
 
 			return h("div", {
@@ -397,8 +492,8 @@ window.__ModuleLoader__.load({
 					// 头部（拖动手柄）
 					h("div", { className: "dsa-header dsa-drag", onPointerDown: onDragStart }, [
 						h("div", { className: "dsa-cover" },
-							playing && playing.picUrl
-								? h("img", { src: playing.picUrl, alt: "", draggable: false })
+							playing && playing.albumPic
+								? h("img", { src: playing.albumPic, alt: "", draggable: false })
 								: h("span", null, "🎵")
 						),
 						h("div", { className: "dsa-meta" }, [
@@ -421,7 +516,7 @@ window.__ModuleLoader__.load({
 								title: "播放/暂停",
 								disabled: !canControl,
 								onClick: function () { runCommand("toggle-play"); }
-							}, playing && playing.isPlaying ? ICONS.pause : ICONS.play),
+							}, isPlaying ? ICONS.pause : ICONS.play),
 							h("button", { className: "dsa-btn", title: "下一首", disabled: !canControl, onClick: function () { runCommand("next"); } }, ICONS.next),
 							h("button", { className: "dsa-btn", title: "音量+", disabled: !canControl, onClick: function () { runCommand("volume-up"); } }, ICONS.volup),
 							h("button", { className: "dsa-btn dsa-fav", title: "收藏/取消收藏当前歌曲", disabled: !canControl || !playing, onClick: function () { runCommand("toggle-favorite"); } }, "♥")

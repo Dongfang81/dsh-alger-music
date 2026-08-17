@@ -138,11 +138,20 @@ function buildActions(cfg, client) {
 					/* 状态查询失败时降级 */
 				}
 			}
-			// 播放列表（CDP 可用时读取，不可用时降级为 null）
+			// 播放列表 + 播放进度（CDP 可用时读取，不可用时降级为 null）
 			let queue = null;
+			let playback = null;
 			if (cdpUp) {
 				try {
 					queue = await cdpEvaluate(cfg.cdpPort, buildGetQueueScript(100), { timeoutMs: 6000 });
+					playback =
+						queue && typeof queue.position === 'number'
+							? {
+									position: queue.position,
+									duration: queue.duration,
+									playing: Boolean(queue.playing)
+								}
+							: null;
 				} catch {
 					/* CDP 读取失败时降级 */
 				}
@@ -157,6 +166,7 @@ function buildActions(cfg, client) {
 				cdpUp,
 				remoteControl: readRemoteControlConfig(),
 				playing,
+				playback,
 				queue: queue && Array.isArray(queue.queue) ? { items: queue.queue, index: queue.index ?? -1 } : null
 			};
 		},
@@ -368,6 +378,43 @@ function buildActions(cfg, client) {
 			]);
 			if (!detail) throw new Error(`未找到歌曲 id=${id}（详情接口无返回）。`);
 			return { ...compactSong(detail), lyric: lyricText, url };
+		},
+
+		/** 轻量歌词（浮动窗口歌词气泡用，只取 LRC 文本） */
+		async lyric(args) {
+			const id = Number(args?.id);
+			if (!Number.isFinite(id)) throw new Error('请提供有效的歌曲 id。');
+			const text = await client.lyric(id);
+			return { ok: true, id, lyric: text || null };
+		},
+
+		/** 艺术家头像（浮动窗口宠物形象用） */
+		async artist(args) {
+			const id = Number(args?.id);
+			if (!Number.isFinite(id)) throw new Error('请提供有效的艺术家 id。');
+			let avatar = null;
+			let name = '';
+			try {
+				const data = await client.getJson(`${client.apiBase}/artist/detail?id=${id}`);
+				const a = data?.data?.artist;
+				if (a) {
+					name = a.name || '';
+					avatar = a.avatar || a.img1v1Url || a.cover || a.picUrl || null;
+				}
+			} catch {
+				/* 降级到搜索 */
+			}
+			if (!avatar) {
+				try {
+					const r = await client.search(name, 1004, 3);
+					const match = (r.artists || []).find((a) => Number(a.id) === Number(id)) || (r.artists || [])[0];
+					if (match) avatar = match.img1v1Url || match.picUrl || null;
+				} catch {
+					/* 忽略 */
+				}
+			}
+			if (avatar) avatar = String(avatar).replace(/^http:\/\//, 'https://');
+			return { ok: true, id, name, avatar };
 		},
 
 		/** alger_playlist */
@@ -914,6 +961,30 @@ function registerRoutes(webServer, actions) {
 				try {
 					const body = JSON.parse((await readBody(req)) || '{}');
 					json(res, await actions.queue(body));
+				} catch (error) {
+					json(res, { ok: false, error: String((error && error.message) || error) });
+				}
+			}
+		},
+		{
+			kind: 'exact',
+			path: '/dsh-alger/lyric',
+			handler: async (req, res) => {
+				try {
+					const body = JSON.parse((await readBody(req)) || '{}');
+					json(res, await actions.lyric(body));
+				} catch (error) {
+					json(res, { ok: false, error: String((error && error.message) || error) });
+				}
+			}
+		},
+		{
+			kind: 'exact',
+			path: '/dsh-alger/artist',
+			handler: async (req, res) => {
+				try {
+					const body = JSON.parse((await readBody(req)) || '{}');
+					json(res, await actions.artist(body));
 				} catch (error) {
 					json(res, { ok: false, error: String((error && error.message) || error) });
 				}
