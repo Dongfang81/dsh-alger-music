@@ -21,7 +21,7 @@
  * @module dsh-alger-music
  */
 import { createClient, enableRemoteControl, readRemoteControlConfig } from './lib/alger.js';
-import { buildPlayScript, buildGetQueueScript, buildQueueScript, buildQueueJumpScript, cdpEvaluate } from './lib/cdp.js';
+import { buildPlayScript, buildGetQueueScript, buildQueueScript, buildQueueJumpScript, buildTogglePlayModeScript, cdpEvaluate } from './lib/cdp.js';
 import { existsSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -168,6 +168,7 @@ function buildActions(cfg, client) {
 				playing,
 				playback,
 				favorite: queue && typeof queue.favorite === 'boolean' ? queue.favorite : null,
+				playMode: queue && typeof queue.playMode === 'number' ? queue.playMode : null,
 				queue: queue && Array.isArray(queue.queue) ? { items: queue.queue, index: queue.index ?? -1 } : null
 			};
 		},
@@ -608,8 +609,17 @@ function buildActions(cfg, client) {
 			const action = String(args?.action ?? '');
 			if (!action)
 				throw new Error(
-					'请提供 action（toggle-play / play / pause / next / prev / volume-up / volume-down / toggle-favorite）。'
+					'请提供 action（toggle-play / play / pause / next / prev / volume-up / volume-down / toggle-favorite / playmode）。'
 				);
+			// 播放模式切换走 CDP（0=列表循环 / 1=单曲循环 / 2=随机）
+			if (action === 'playmode') {
+				if (!(await client.cdpUp())) {
+					throw new Error(`CDP 点歌通道（${cfg.cdpPort}）未就绪。请先调用 alger_setup action=relaunch。`);
+				}
+				const out = await cdpEvaluate(cfg.cdpPort, buildTogglePlayModeScript(), { timeoutMs: cfg.timeoutMs });
+				if (!out?.ok) throw new Error(out?.error || '切换播放模式失败');
+				return { action, message: '已切换播放模式', playMode: out.playMode };
+			}
 			if (!(await client.remoteUp())) {
 				throw new Error(`远程控制（${cfg.remotePort}）未就绪。请先调用 alger_setup action=relaunch 开启远程控制并重启 App。`);
 			}
@@ -871,11 +881,11 @@ function buildTools(cfg, actions) {
 	const control = {
 		name: 'alger_control',
 		description:
-			'远程控制 AlgerMusicPlayer 播放：toggle-play 播放/暂停切换、play 播放、pause 暂停、next 下一首、prev 上一首、volume-up 音量加、volume-down 音量减、toggle-favorite 收藏/取消收藏当前歌曲。',
+			'远程控制 AlgerMusicPlayer 播放：toggle-play 播放/暂停切换、play 播放、pause 暂停、next 下一首、prev 上一首、volume-up 音量加、volume-down 音量减、toggle-favorite 收藏/取消收藏当前歌曲、playmode 切换播放模式（0=列表循环/1=单曲循环/2=随机）。',
 		parameters: compileParameters({
 			action: {
 				type: 'string',
-				enum: ['toggle-play', 'play', 'pause', 'next', 'prev', 'volume-up', 'volume-down', 'toggle-favorite'],
+				enum: ['toggle-play', 'play', 'pause', 'next', 'prev', 'volume-up', 'volume-down', 'toggle-favorite', 'playmode'],
 				required: true,
 				description: '要执行的控制动作。'
 			}

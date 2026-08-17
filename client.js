@@ -100,6 +100,12 @@ window.__ModuleLoader__.load({
 			".dsa-btn:disabled{opacity:0.35;cursor:not-allowed}",
 			".dsa-btn-primary{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,rgba(255,255,255,0.95),rgba(255,255,255,0.72));color:#11131f;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,0.35)}",
 			".dsa-btn-primary:hover{filter:brightness(1.05)}",
+			".dsa-mode{font-size:10px;min-width:32px;padding:0 3px;color:rgba(255,255,255,0.85)}",
+			".dsa-traffic{flex:none;display:flex;align-items:center;gap:5px;margin-right:2px}",
+			".dsa-tl{width:12px;height:12px;border-radius:50%;border:none;padding:0;display:flex;align-items:center;justify-content:center;font-size:9px;line-height:1;color:transparent;cursor:pointer;flex:none}",
+			".dsa-tl:hover{color:rgba(0,0,0,0.55)}",
+			".dsa-tl.close{background:#ff5f57}",
+			".dsa-tl.min{background:#febc2e}",
 			".dsa-body{padding:2px 12px 12px}",
 			".dsa-controls{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}",
 			".dsa-search{display:flex;gap:6px;margin-top:8px}",
@@ -253,6 +259,7 @@ window.__ModuleLoader__.load({
 			var [queueOpen, setQueueOpen] = React.useState(false);
 			var [selectedIdx, setSelectedIdx] = React.useState(null); // 播放列表"单击选中"的行
 			var [favOptimistic, setFavOptimistic] = React.useState(null); // 收藏乐观状态（null=跟随真实状态）
+			var [hidden, setHidden] = React.useState(false); // 关闭浮窗（本页会话内隐藏，刷新后恢复）
 			var [notice, setNotice] = React.useState(null); // {kind:'ok'|'err'|'', text}
 			var [busy, setBusy] = React.useState(false);
 			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
@@ -573,6 +580,12 @@ window.__ModuleLoader__.load({
 				return function () { window.removeEventListener("resize", measure); };
 			}, [bubbleText, bubbleMaxW, collapsed, pos]);
 
+			// 已关闭：整个浮窗隐藏（本页会话内，刷新后恢复）
+			if (hidden) return null;
+
+			// 播放模式文案（0=列表循环 / 1=单曲循环 / 2=随机）
+			var playModeLabel = ["循环", "单曲", "随机"][state && typeof state.playMode === "number" ? state.playMode : 0] || "循环";
+
 			// 折叠态：会唱歌的宠物（作者形象 + 歌词气泡）
 			if (collapsed) {
 				var petImg = artistInfo && artistInfo.avatar ? artistInfo.avatar : (playing ? playing.albumPic : null);
@@ -624,8 +637,12 @@ window.__ModuleLoader__.load({
 				style: { position: "fixed", left: pos ? pos.x : window.innerWidth - WIDTH - 18, top: pos ? pos.y : window.innerHeight - 300, zIndex: 2147483000 }
 			}, [
 				h("div", { className: "dsa-card" }, [
-					// 头部（拖动手柄）
+					// 头部（拖动手柄）：左=Mac风格红黄按钮，右=连接状态
 					h("div", { className: "dsa-header dsa-drag", onPointerDown: onDragStart }, [
+						h("div", { className: "dsa-traffic" }, [
+							h("button", { className: "dsa-tl close", title: "关闭浮窗", onClick: function (e) { e.stopPropagation(); setHidden(true); } }, "×"),
+							h("button", { className: "dsa-tl min", title: "收起为宠物（最小化）", onClick: function (e) { e.stopPropagation(); toggleCollapsed(); } }, "–")
+						]),
 						h("div", { className: "dsa-cover" },
 							playing && playing.albumPic
 								? h("img", { src: playing.albumPic, alt: "", draggable: false })
@@ -644,30 +661,14 @@ window.__ModuleLoader__.load({
 							}, [
 								h("span", { className: "dot " + dot }),
 								h("span", null, connLabel)
-							]),
-							// 收起为宠物：标准右向箭头图标（SVG，避免裸字符"一条线"）
-							h("button", {
-								className: "dsa-btn",
-								title: "收起为宠物",
-								onClick: toggleCollapsed
-							},
-								h("svg", {
-									width: 16,
-									height: 16,
-									viewBox: "0 0 16 16",
-									fill: "none",
-									stroke: "currentColor",
-									strokeWidth: 1.8,
-									strokeLinecap: "round",
-									strokeLinejoin: "round"
-								}, h("path", { d: "M6.5 4l4 4-4 4" }))
-							)
+							])
 						])
 					]),
 					// 主体
 					h("div", { className: "dsa-body" }, [
 						// 传输控制（含收藏）
 						h("div", { className: "dsa-controls" }, [
+							h("button", { className: "dsa-btn dsa-mode", title: "播放模式：单击切换（循环/单曲/随机）", disabled: !canControl, onClick: function () { runCommand("playmode"); } }, playModeLabel),
 							h("button", { className: "dsa-btn", title: "音量-", disabled: !canControl, onClick: function () { runCommand("volume-down"); } }, ICONS.voldown),
 							h("button", { className: "dsa-btn", title: "上一首", disabled: !canControl, onClick: function () { runCommand("prev"); } }, ICONS.prev),
 							h("button", {
@@ -727,7 +728,17 @@ window.__ModuleLoader__.load({
 								onChange: function (e) { setQuery(e.target.value); },
 								onKeyDown: onSearchKey
 							}),
-							h("button", { className: "dsa-go", disabled: searching || busy || !query.trim(), onClick: onSearch }, searching ? "…" : ICONS.search)
+							h("button", {
+								className: "dsa-go",
+								disabled: searching || busy || !query.trim(),
+								onClick: onSearch
+							}, searching
+								? "…"
+								: h("svg", { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" }, [
+										h("circle", { cx: 11, cy: 11, r: 7 }),
+										h("line", { x1: 21, y1: 21, x2: 16.2, y2: 16.2 })
+									])
+							)
 						]),
 						// 搜索结果（歌曲：双击播放 + 加入；歌单：双击播放歌单 + 整单加入）
 						results && results.length > 0
