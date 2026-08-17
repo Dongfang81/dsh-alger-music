@@ -510,9 +510,11 @@ window.__ModuleLoader__.load({
 					max = Math.max(120, Math.min(230, Math.floor(max)));
 					setBubbleSide(function (prev) { return prev === side ? prev : side; });
 					setBubbleMaxW(function (prev) { return prev === max ? prev : max; });
-					// 歌词溢出检测（marquee）
+					// 歌词溢出检测（marquee）：不依赖气泡实际渲染宽度（左右两侧 abs-pos 收缩方式
+					// 不同会导致 clientWidth 不可靠），直接对比【歌词文本自然宽度】vs【已知气泡宽度上限】。
 					var inner = el.querySelector(".dsa-pet-bubble");
-					var over = inner ? inner.scrollWidth > inner.clientWidth + 2 : false;
+					var textEl = inner ? inner.querySelector("span") : null;
+					var over = textEl ? textEl.scrollWidth > bubbleMaxW + 2 : false;
 					setOverflowing(function (prev) { return prev === over ? prev : over; });
 				};
 				measure();
