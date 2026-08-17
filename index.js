@@ -21,7 +21,7 @@
  * @module dsh-alger-music
  */
 import { createClient, enableRemoteControl, readRemoteControlConfig } from './lib/alger.js';
-import { buildPlayScript, buildGetQueueScript, buildQueueScript, cdpEvaluate } from './lib/cdp.js';
+import { buildPlayScript, buildGetQueueScript, buildQueueScript, buildQueueJumpScript, cdpEvaluate } from './lib/cdp.js';
 import { existsSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -515,8 +515,8 @@ function buildActions(cfg, client) {
 		/** alger_queue：播放列表操作（追加 / 插入下一首 / 整单播放） */
 		async queue(args) {
 			const action = String(args?.action ?? '');
-			if (!['add', 'add-all', 'add-next', 'playlist', 'playlist-add'].includes(action))
-				throw new Error('action 需为 add / add-all / add-next / playlist / playlist-add。');
+			if (!['add', 'add-all', 'add-next', 'playlist', 'playlist-add', 'jump'].includes(action))
+				throw new Error('action 需为 add / add-all / add-next / playlist / playlist-add / jump。');
 			const steps = [];
 			const log = (s) => steps.push(String(s));
 
@@ -563,6 +563,21 @@ function buildActions(cfg, client) {
 					throw new Error('add / add-next 需要 songId 或 keyword。');
 				}
 				if (action === 'add-next') mode = 'next';
+			} else if (action === 'jump') {
+				// 跳转队列位置播放：不解析歌曲数据，直接按 index 走 CDP
+				const idx = Number(args?.index);
+				if (!Number.isInteger(idx) || idx < 0) throw new Error('jump 需要有效的 index（0 起的整数）。');
+				steps.push(`目标队列位置: #${idx}`);
+				const script = buildQueueJumpScript(idx);
+				let jout;
+				try {
+					jout = await cdpEvaluate(cfg.cdpPort, script, { timeoutMs: cfg.timeoutMs });
+				} catch (error) {
+					return { ok: false, steps: [...steps, `CDP 执行失败: ${error.message}`], guidance: '可尝试 alger_setup action=relaunch 后重试。' };
+				}
+				steps.push(...(jout?.steps || []));
+				if (!jout?.ok) return { ok: false, steps, guidance: jout?.error || '跳转播放失败' };
+				return { ok: true, steps, mode: 'jump', playedName: jout.playedName, queueLength: jout.queueLength };
 			} else {
 				// add-all：整批搜索结果加入
 				const keyword = String(args?.keyword ?? '').trim();
@@ -819,17 +834,18 @@ function buildTools(cfg, actions) {
 	const queue = {
 		name: 'alger_queue',
 		description:
-			'播放列表操作（走 CDP，需 App 带调试端口运行）：action=add 把指定歌曲（songId 或 keyword 最佳匹配）追加到播放列表末尾；action=add-all 把某关键词的全部搜索结果（limit 控制数量）一键加入播放列表；action=add-next 插入到当前歌曲之后；action=playlist 按 playlistId 整单播放歌单（替换队列并立即播放第一首）；action=playlist-add 把歌单全部歌曲追加到播放列表末尾（不播放）。',
+			'播放列表操作（走 CDP，需 App 带调试端口运行）：action=add 把指定歌曲（songId 或 keyword 最佳匹配）追加到播放列表末尾；action=add-all 把某关键词的全部搜索结果（limit 控制数量）一键加入播放列表；action=add-next 插入到当前歌曲之后；action=playlist 按 playlistId 整单播放歌单（替换队列并立即播放第一首）；action=playlist-add 把歌单全部歌曲追加到播放列表末尾（不播放）；action=jump 按 index 跳转播放队列中指定位置的歌曲（队列不变）。',
 		parameters: compileParameters({
 			action: {
 				type: 'string',
-				enum: ['add', 'add-all', 'add-next', 'playlist', 'playlist-add'],
+				enum: ['add', 'add-all', 'add-next', 'playlist', 'playlist-add', 'jump'],
 				required: true,
-				description: '操作：add=追加单曲；add-all=整批搜索结果加入；add-next=插入下一首；playlist=整单播放歌单；playlist-add=歌单整单追加到播放列表。'
+				description: '操作：add=追加单曲；add-all=整批搜索结果加入；add-next=插入下一首；playlist=整单播放歌单；playlist-add=歌单整单追加到播放列表；jump=按 index 跳转播放。'
 			},
 			songId: { type: 'integer', description: '歌曲 id（add/add-next 用，与 keyword 二选一）。' },
 			keyword: { type: 'string', description: '歌名/歌手关键词（add/add-next/add-all 用）。' },
 			playlistId: { type: 'integer', description: '歌单 id（playlist/playlist-add 用，来自 alger_search type=1000）。' },
+			index: { type: 'integer', description: '队列下标 0 起（jump 用）。' },
 			limit: { type: 'integer', description: 'add-all 时最多加入多少首，默认 20，最大 50。' }
 		}),
 		output: {

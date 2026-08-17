@@ -144,8 +144,10 @@ window.__ModuleLoader__.load({
 			".dsa-queue-title .cnt{color:rgba(255,255,255,0.5);font-weight:400}",
 			".dsa-queue-title .fold{margin-left:auto;color:rgba(255,255,255,0.5)}",
 			".dsa-queue-list{max-height:130px;overflow-y:auto;padding:0 6px 6px}",
-			".dsa-qitem{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:7px;font-size:11px;color:rgba(255,255,255,0.8)}",
+			".dsa-qitem{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:7px;font-size:11px;color:rgba(255,255,255,0.8);cursor:pointer}",
+			".dsa-qitem:hover{background:rgba(255,255,255,0.08)}",
 			".dsa-qitem.cur{background:rgba(59,130,246,0.22);color:#fff}",
+			".dsa-qitem.sel{box-shadow:inset 0 0 0 1px rgba(255,255,255,0.5);background:rgba(255,255,255,0.12);color:#fff}",
 			".dsa-qitem .n{flex:none;width:16px;text-align:right;color:rgba(255,255,255,0.4);font-size:10px}",
 			".dsa-qitem .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
 			".dsa-qitem .s{font-size:10px;color:rgba(255,255,255,0.5);max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
@@ -243,6 +245,7 @@ window.__ModuleLoader__.load({
 			var [searching, setSearching] = React.useState(false);
 			var [results, setResults] = React.useState(null);
 			var [queueOpen, setQueueOpen] = React.useState(false);
+			var [selectedIdx, setSelectedIdx] = React.useState(null); // 播放列表"单击选中"的行
 			var [notice, setNotice] = React.useState(null); // {kind:'ok'|'err'|'', text}
 			var [busy, setBusy] = React.useState(false);
 			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
@@ -422,6 +425,20 @@ window.__ModuleLoader__.load({
 					else flash("err", (r && r.guidance) || (r && r.error) || "加入失败");
 					setTimeout(refresh, 500);
 				}).catch(function () { setBusy(false); flash("err", "加入失败"); });
+			};
+
+			// 播放列表：单击选中、双击跳转播放（保留队列）
+			var onQueueSelect = function (i) {
+				setSelectedIdx(i === selectedIdx ? null : i);
+			};
+			var onQueueJump = function (i) {
+				setBusy(true);
+				queueApi({ action: "jump", index: i }).then(function (r) {
+					setBusy(false);
+					if (r && r.ok) flash("ok", "已跳转播放：" + (r.playedName || ""));
+					else flash("err", (r && r.guidance) || (r && r.error) || "播放失败");
+					setTimeout(refresh, 600);
+				}).catch(function () { setBusy(false); flash("err", "播放失败"); });
 			};
 
 			var onSetup = function () {
@@ -617,7 +634,12 @@ window.__ModuleLoader__.load({
 										? h("div", { className: "dsa-queue-list" }, state.queue.items.map(function (item, i) {
 												return h("div", {
 													key: item.id + "-" + i,
-													className: "dsa-qitem" + (i === state.queue.index ? " cur" : "")
+													className: "dsa-qitem" +
+														(i === state.queue.index ? " cur" : "") +
+														(i === selectedIdx && i !== state.queue.index ? " sel" : ""),
+													title: "单击选中，双击播放",
+													onClick: function () { onQueueSelect(i); },
+													onDoubleClick: function () { onQueueJump(i); }
 												}, [
 													h("span", { className: "n" }, (i + 1) + "."),
 													h("span", { className: "t" }, item.name),
