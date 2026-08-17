@@ -2,3 +2,5 @@ demo/video/
 demo/pw-cache/
 demo/frames/
 demo/bbox.json
+demo/shots/
+demo/_grid.html
