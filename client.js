@@ -1,0 +1,550 @@
+/**
+ * dsh-alger-music —— Client half（浏览器浮动播放器）。
+ *
+ * 由 DSH web 的模块加载器（window.__ModuleLoader__.load）挂载：右下角浮动小窗，
+ * 实时展示 AlgerMusicPlayer 的播放状态，提供 播放/暂停、上一首、下一首、音量±、
+ * 搜索点歌 与“一键就绪”（开启 App 远程控制并带调试口重启）。所有数据经插件
+ * 服务端路由 /dsh-alger/* 中转（本机 30488/31888/CDP 不直接暴露给页面）。
+ */
+window.__ModuleLoader__.load({
+	id: "dsh-alger-music",
+	factory: (require) => {
+		var module = { exports: {} };
+		var exports = module.exports;
+		var React = require("react");
+		var ReactDOM = require("react-dom");
+		var h = React.createElement;
+
+		/** 轮询间隔（ms）。 */
+		var POLL_MS = 1500;
+		/** 展开宽度。 */
+		var WIDTH = 280;
+		/** 本地存储键。 */
+		var STORE_COLLAPSED = "dsh-alger:collapsed";
+		var STORE_X = "dsh-alger:x";
+		var STORE_Y = "dsh-alger:y";
+
+		/* ---------- API ---------- */
+		function getState() {
+			return fetch("/dsh-alger/state", { cache: "no-store" }).then(function (r) { return r.json(); });
+		}
+		function post(path, body) {
+			return fetch(path, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(body || {})
+			}).then(function (r) { return r.json(); });
+		}
+		var command = function (action) { return post("/dsh-alger/command", { action: action }); };
+		var searchMusic = function (keywords, type) { return post("/dsh-alger/search", { keywords: keywords, type: type || 1, limit: 8 }); };
+		var playSong = function (payload) { return post("/dsh-alger/play", payload); };
+		var queueApi = function (payload) { return post("/dsh-alger/queue", payload); };
+		var setupApp = function (action) { return post("/dsh-alger/setup", { action: action }); };
+		var installApp = function () { return post("/dsh-alger/install", {}); };
+
+		/* ---------- 样式 ---------- */
+		var CSS = [
+			"#dsh-alger-root{position:fixed;left:0;top:0;z-index:2147483000;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;user-select:none;color:#fff}",
+			".dsa-card{width:" + WIDTH + "px;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03)),rgba(13,15,24,0.66);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);border:1px solid rgba(255,255,255,0.16);box-shadow:0 14px 40px rgba(0,0,0,0.42),inset 0 1px 0 rgba(255,255,255,0.16)}",
+			".dsa-drag{cursor:grab}.dsa-drag:active{cursor:grabbing}",
+			".dsa-header{display:flex;align-items:center;gap:9px;padding:8px 10px}",
+			".dsa-cover{flex:none;width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.22),0 4px 12px rgba(0,0,0,0.35);overflow:hidden}",
+			".dsa-cover img{width:100%;height:100%;object-fit:cover}",
+			".dsa-meta{flex:1;min-width:0}",
+			".dsa-title{font-size:13px;font-weight:600;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,0.4)}",
+			".dsa-artist{font-size:10.5px;line-height:14px;color:rgba(255,255,255,0.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+			".dsa-actions{flex:none;display:flex;align-items:center;gap:2px}",
+			".dsa-btn{flex:none;width:26px;height:26px;border:none;border-radius:8px;background:transparent;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;padding:0;text-shadow:0 1px 3px rgba(0,0,0,0.35)}",
+			".dsa-btn:hover{background:rgba(255,255,255,0.16)}",
+			".dsa-btn:disabled{opacity:0.35;cursor:not-allowed}",
+			".dsa-btn-primary{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,rgba(255,255,255,0.95),rgba(255,255,255,0.72));color:#11131f;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,0.35)}",
+			".dsa-btn-primary:hover{filter:brightness(1.05)}",
+			".dsa-body{padding:2px 12px 12px}",
+			".dsa-controls{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}",
+			".dsa-search{display:flex;gap:6px;margin-top:8px}",
+			".dsa-input{flex:1;min-width:0;background:rgba(255,255,255,0.13);border:1px solid rgba(255,255,255,0.22);border-radius:9px;color:#fff;font-size:12px;padding:5px 9px;outline:none;backdrop-filter:blur(6px)}",
+			".dsa-input:focus{border-color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.17)}",
+			".dsa-input::placeholder{color:rgba(255,255,255,0.5)}",
+			".dsa-go{flex:none;border:none;border-radius:9px;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-size:12px;padding:0 12px;cursor:pointer;font-weight:600}",
+			".dsa-go:hover{filter:brightness(1.08)}",
+			".dsa-go:disabled{opacity:0.5;cursor:not-allowed}",
+			".dsa-results{margin-top:6px;max-height:150px;overflow-y:auto}",
+			".dsa-item{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:8px;cursor:pointer}",
+			".dsa-item:hover{background:rgba(255,255,255,0.10)}",
+			".dsa-item .t{flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+			".dsa-item .s{font-size:10px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}",
+			".dsa-item .p{font-size:10px;color:rgba(255,255,255,0.45);flex:none}",
+			".dsa-notice{margin-top:7px;padding:5px 9px;border-radius:8px;font-size:11px;line-height:1.45;background:rgba(245,158,11,0.16);border:1px solid rgba(245,158,11,0.35);color:#fcd34d}",
+			".dsa-notice.ok{background:rgba(52,211,153,0.14);border-color:rgba(52,211,153,0.35);color:#6ee7b7}",
+			".dsa-notice.err{background:rgba(239,68,68,0.14);border-color:rgba(239,68,68,0.35);color:#fca5a5}",
+			".dsa-ready{display:flex;align-items:center;gap:8px;margin-top:8px;padding:6px 9px;border-radius:9px;background:rgba(255,255,255,0.06);font-size:11px;color:rgba(255,255,255,0.8)}",
+			".dsa-ready .dot{width:8px;height:8px;border-radius:50%;flex:none}",
+			".dsa-ready .dot.ok{background:#34d399;box-shadow:0 0 6px rgba(52,211,153,0.8)}",
+			".dsa-ready .dot.wait{background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,0.8)}",
+			".dsa-ready .dot.bad{background:#ef4444;box-shadow:0 0 6px rgba(239,68,68,0.8)}",
+			".dsa-ready .txt{flex:1;min-width:0}",
+			".dsa-ready .act{flex:none;border:none;border-radius:8px;background:linear-gradient(135deg,#f59e0b,#f97316);color:#1c1200;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer}",
+			".dsa-ready .act:hover{filter:brightness(1.1)}",
+			".dsa-ready .act:disabled{opacity:0.5;cursor:wait}",
+			".dsa-mini{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;cursor:pointer;background:linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03)),rgba(13,15,24,0.7);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,0.16);box-shadow:0 10px 30px rgba(0,0,0,0.4);white-space:nowrap;max-width:280px}",
+			".dsa-mini .dot{width:8px;height:8px;border-radius:50%;flex:none}",
+			".dsa-mini .dot.ok{background:#34d399;box-shadow:0 0 6px rgba(52,211,153,0.8)}",
+			".dsa-mini .dot.wait{background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,0.8)}",
+			".dsa-mini .dot.bad{background:#ef4444;box-shadow:0 0 6px rgba(239,68,68,0.8)}",
+			".dsa-mini .t{font-size:12px;font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis}",
+			".dsa-mini .hint{font-size:10px;color:rgba(255,255,255,0.6)}",
+			".dsa-fav{color:#fda4af}.dsa-fav:hover{background:rgba(244,114,182,0.18)}",
+			".dsa-types{display:flex;gap:4px;margin-top:7px}",
+			".dsa-type{flex:1;border:1px solid rgba(255,255,255,0.18);background:transparent;color:rgba(255,255,255,0.75);border-radius:8px;font-size:11px;padding:3px 0;cursor:pointer}",
+			".dsa-type.active{background:rgba(255,255,255,0.16);border-color:rgba(255,255,255,0.4);color:#fff;font-weight:600}",
+			".dsa-type:hover{background:rgba(255,255,255,0.08)}",
+			".dsa-queue{margin-top:8px;border:1px solid rgba(255,255,255,0.12);border-radius:10px;background:rgba(255,255,255,0.05)}",
+			".dsa-queue-title{display:flex;align-items:center;gap:6px;padding:6px 9px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.85);cursor:pointer}",
+			".dsa-queue-title .cnt{color:rgba(255,255,255,0.5);font-weight:400}",
+			".dsa-queue-title .fold{margin-left:auto;color:rgba(255,255,255,0.5)}",
+			".dsa-queue-list{max-height:130px;overflow-y:auto;padding:0 6px 6px}",
+			".dsa-qitem{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:7px;font-size:11px;color:rgba(255,255,255,0.8)}",
+			".dsa-qitem.cur{background:rgba(59,130,246,0.22);color:#fff}",
+			".dsa-qitem .n{flex:none;width:16px;text-align:right;color:rgba(255,255,255,0.4);font-size:10px}",
+			".dsa-qitem .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+			".dsa-qitem .s{font-size:10px;color:rgba(255,255,255,0.5);max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+			".dsa-addall{margin-top:6px;width:100%;border:1px dashed rgba(255,255,255,0.25);background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.85);border-radius:8px;font-size:11px;padding:4px 0;cursor:pointer}",
+			".dsa-addall:hover{background:rgba(255,255,255,0.12)}",
+			".dsa-addall:disabled{opacity:0.5;cursor:not-allowed}",
+			".dsa-rowbtn{flex:none;border:none;border-radius:7px;background:rgba(255,255,255,0.12);color:#fff;font-size:10px;padding:2px 7px;cursor:pointer}",
+			".dsa-rowbtn:hover{background:rgba(255,255,255,0.22)}",
+			".dsa-rowbtn:disabled{opacity:0.5;cursor:not-allowed}",
+			".dsa-rowbtn.play{background:linear-gradient(135deg,#3b82f6,#6366f1)}"
+		].join("\n");
+
+		function injectCss() {
+			var tag = document.createElement("style");
+			tag.dataset.plugin = "dsh-alger-music";
+			tag.textContent = CSS;
+			document.head.appendChild(tag);
+		}
+
+		/* ---------- 图标（内联 SVG 字符） ---------- */
+		var ICONS = {
+			play: "▶",
+			pause: "❚❚",
+			prev: "⏮",
+			next: "⏭",
+			volup: "🔊",
+			voldown: "🔉",
+			collapse: "▾",
+			expand: "▸",
+			search: "🔍",
+			refresh: "↻"
+		};
+
+		function readyDot(state) {
+			if (!state) return "wait";
+			if (!state.installed) return "bad";
+			if (!state.running) return "wait";
+			if (!state.remoteUp) return "wait";
+			return "ok";
+		}
+
+		function readyText(state) {
+			if (!state) return "连接中…";
+			if (!state.installed) return "未安装 AlgerMusicPlayer";
+			if (!state.running) return "App 未运行";
+			if (!state.remoteUp) return "远程控制未就绪";
+			if (!state.cdpUp) return "已就绪（点歌通道待开启）";
+			return "已就绪";
+		}
+
+		function needSetup(state) {
+			return state && state.installed && (!state.running || !state.remoteUp || !state.cdpUp);
+		}
+
+		/* ---------- 浮动播放器 ---------- */
+		function MusicPlayer() {
+			var [state, setState] = React.useState(null);
+			var [collapsed, setCollapsed] = React.useState(function () {
+				try { return localStorage.getItem(STORE_COLLAPSED) === "1"; } catch { return false; }
+			});
+			var [pos, setPos] = React.useState(null);
+			var posRef = React.useRef(null);
+			var dragRef = React.useRef(null);
+			var cardRef = React.useRef(null);
+			var [query, setQuery] = React.useState("");
+			var [searchType, setSearchType] = React.useState(1); // 1=歌曲 1000=歌单
+			var [searching, setSearching] = React.useState(false);
+			var [results, setResults] = React.useState(null);
+			var [queueOpen, setQueueOpen] = React.useState(false);
+			var [notice, setNotice] = React.useState(null); // {kind:'ok'|'err'|'', text}
+			var [busy, setBusy] = React.useState(false);
+			var noticeTimer = React.useRef(null);
+
+			var flash = function (kind, text) {
+				setNotice({ kind: kind || "", text: text });
+				if (noticeTimer.current) clearTimeout(noticeTimer.current);
+				noticeTimer.current = setTimeout(function () { setNotice(null); }, 6000);
+			};
+
+			var refresh = React.useCallback(function () {
+				getState().then(function (s) { setState(s); }).catch(function () { /* 忽略瞬时失败 */ });
+			}, []);
+
+			// 轮询
+			React.useEffect(function () {
+				refresh();
+				var timer = setInterval(refresh, POLL_MS);
+				return function () { clearInterval(timer); };
+			}, [refresh]);
+
+			// 恢复位置 / 默认右下角
+			React.useEffect(function () {
+				try {
+					var x = localStorage.getItem(STORE_X);
+					var y = localStorage.getItem(STORE_Y);
+					if (x !== null && y !== null) {
+						var p = { x: Number(x), y: Number(y) };
+						if (Number.isFinite(p.x) && Number.isFinite(p.y)) { posRef.current = p; setPos(p); return; }
+					}
+				} catch { /* ignore */ }
+				posRef.current = null;
+				setPos(null);
+			}, []);
+
+			// 视口内钳制
+			React.useEffect(function () {
+				var height = cardRef.current ? cardRef.current.offsetHeight : (collapsed ? 40 : 260);
+				var p = posRef.current;
+				if (!p) return;
+				var clamped = {
+					x: Math.max(4, Math.min(window.innerWidth - WIDTH - 4, p.x)),
+					y: Math.max(4, Math.min(window.innerHeight - height - 4, p.y))
+				};
+				if (clamped.x !== p.x || clamped.y !== p.y) { posRef.current = clamped; setPos(clamped); }
+			}, [collapsed, state]);
+
+			// 拖动
+			var onDragStart = function (event) {
+				if (event.button !== 0) return;
+				dragRef.current = {
+					startX: event.clientX,
+					startY: event.clientY,
+					origX: posRef.current ? posRef.current.x : null,
+					origY: posRef.current ? posRef.current.y : null,
+					moved: false
+				};
+				var onMove = function (ev) {
+					var drag = dragRef.current;
+					if (!drag) return;
+					var dx = ev.clientX - drag.startX;
+					var dy = ev.clientY - drag.startY;
+					if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+					drag.moved = true;
+					var baseX = drag.origX !== null ? drag.origX : window.innerWidth - WIDTH - 18;
+					var baseY = drag.origY !== null ? drag.origY : window.innerHeight - 120;
+					posRef.current = { x: baseX + dx, y: baseY + dy };
+					setPos(posRef.current);
+				};
+				var onUp = function () {
+					window.removeEventListener("pointermove", onMove);
+					window.removeEventListener("pointerup", onUp);
+					var p = posRef.current;
+					if (p) {
+						try {
+							localStorage.setItem(STORE_X, String(p.x));
+							localStorage.setItem(STORE_Y, String(p.y));
+						} catch { /* ignore */ }
+					}
+					dragRef.current = null;
+				};
+				window.addEventListener("pointermove", onMove);
+				window.addEventListener("pointerup", onUp);
+			};
+
+			var toggleCollapsed = function () {
+				var next = !collapsed;
+				setCollapsed(next);
+				try { localStorage.setItem(STORE_COLLAPSED, next ? "1" : "0"); } catch { /* ignore */ }
+			};
+
+			var runCommand = function (action) {
+				if (!state || !state.remoteUp) { flash("err", "远程控制未就绪，请先点“一键就绪”"); return; }
+				command(action).then(function (r) {
+					if (r && r.ok === false) flash("err", r.error || "命令失败");
+					setTimeout(refresh, 400);
+				}).catch(function () { flash("err", "命令发送失败"); });
+			};
+
+			var onSearch = function () {
+				var q = query.trim();
+				if (!q) return;
+				setSearching(true);
+				setResults(null);
+				searchMusic(q, searchType).then(function (r) {
+					setSearching(false);
+					if (!r || r.ok === false) { flash("err", (r && r.error) || "搜索失败"); setResults(null); return; }
+					setResults(r.items || []);
+				}).catch(function () { setSearching(false); flash("err", "搜索失败"); });
+			};
+
+			var switchType = function (type) {
+				setSearchType(type);
+				setResults(null);
+				if (query.trim()) setTimeout(onSearch, 0);
+			};
+
+			var onPlaySong = function (item) {
+				setBusy(true);
+				playSong({ songId: item.id }).then(function (r) {
+					setBusy(false);
+					if (r && r.ok) {
+						flash("ok", "已点播：" + (r.playedName || item.name) + (r.confirmed ? "" : "（待确认）"));
+						setResults(null);
+						setQuery("");
+					} else {
+						flash("err", (r && r.guidance) || (r && r.error) || "点歌失败");
+					}
+					setTimeout(refresh, 600);
+				}).catch(function () { setBusy(false); flash("err", "点歌失败"); });
+			};
+
+			var onAddSong = function (item) {
+				setBusy(true);
+				queueApi({ action: "add", songId: item.id }).then(function (r) {
+					setBusy(false);
+					if (r && r.ok) flash("ok", "已加入播放列表：" + (item.name || ""));
+					else flash("err", (r && r.guidance) || (r && r.error) || "加入失败");
+					setTimeout(refresh, 500);
+				}).catch(function () { setBusy(false); flash("err", "加入失败"); });
+			};
+
+			var onAddAll = function () {
+				var q = query.trim();
+				if (!q) return;
+				setBusy(true);
+				queueApi({ action: "add-all", keyword: q, limit: 20 }).then(function (r) {
+					setBusy(false);
+					if (r && r.ok) flash("ok", "已把搜索到的 " + (r.added || 0) + " 首全部加入播放列表");
+					else flash("err", (r && r.guidance) || (r && r.error) || "加入失败");
+					setTimeout(refresh, 500);
+				}).catch(function () { setBusy(false); flash("err", "加入失败"); });
+			};
+
+			var onPlayPlaylist = function (item) {
+				setBusy(true);
+				queueApi({ action: "playlist", playlistId: item.id }).then(function (r) {
+					setBusy(false);
+					if (r && r.ok) flash("ok", "正在播放歌单：" + (item.name || "") + (r.playedName ? "（从 " + r.playedName + " 开始）" : ""));
+					else flash("err", (r && r.guidance) || (r && r.error) || "播放歌单失败");
+					setTimeout(refresh, 600);
+				}).catch(function () { setBusy(false); flash("err", "播放歌单失败"); });
+			};
+
+			var onSetup = function () {
+				setBusy(true);
+				flash("", "正在就绪（重启 App 并开启远程控制，约 10~30 秒）…");
+				setupApp("relaunch").then(function (r) {
+					setBusy(false);
+					if (r && r.ok) flash("ok", "已就绪！可以开始点歌了。");
+					else flash("err", (r && r.steps && r.steps[r.steps.length - 1]) || "就绪失败，请查看 App 状态");
+					refresh();
+				}).catch(function () { setBusy(false); flash("err", "就绪失败"); });
+			};
+
+			var onInstall = function () {
+				setBusy(true);
+				flash("", "正在自动下载并安装 AlgerMusicPlayer（约 130MB，需要几分钟）…");
+				installApp().then(function (r) {
+					setBusy(false);
+					if (r && r.ok) {
+						flash("ok", r.alreadyInstalled ? "已安装" + (r.version ? " " + r.version : "") + "，无需安装" : "安装完成" + (r.version ? "（" + r.version + "）" : "") + "！点“一键就绪”开始使用");
+					} else {
+						flash("err", (r && r.guidance) || (r && r.error) || "安装失败");
+					}
+					refresh();
+				}).catch(function () { setBusy(false); flash("err", "安装失败"); });
+			};
+
+			var onSearchKey = function (event) {
+				if (event.key === "Enter") onSearch();
+			};
+
+			var playing = state && state.playing ? state.playing : null;
+			var dot = readyDot(state);
+			var title = playing ? playing.name : "未在播放";
+			var artist = playing ? (playing.artists || "") : (state && state.running ? "AlgerMusicPlayer" : "播放器未连接");
+			var canControl = Boolean(state && state.remoteUp);
+
+			// 折叠态：迷你胶囊
+			if (collapsed) {
+				return h("div", { style: { position: "fixed", left: pos ? pos.x : window.innerWidth - 240, top: pos ? pos.y : window.innerHeight - 56, zIndex: 2147483000 } },
+					h("div", {
+						className: "dsa-mini",
+						title: "展开播放器",
+						onPointerDown: onDragStart,
+						onClick: function (e) { e.stopPropagation(); toggleCollapsed(); }
+					}, [
+						h("span", { className: "dot " + dot }),
+						h("span", { className: "t" }, title),
+						h("span", { className: "hint" }, playing && playing.isPlaying ? "播放中" : "")
+					])
+				);
+			}
+
+			return h("div", {
+				ref: cardRef,
+				style: { position: "fixed", left: pos ? pos.x : window.innerWidth - WIDTH - 18, top: pos ? pos.y : window.innerHeight - 300, zIndex: 2147483000 }
+			}, [
+				h("div", { className: "dsa-card" }, [
+					// 头部（拖动手柄）
+					h("div", { className: "dsa-header dsa-drag", onPointerDown: onDragStart }, [
+						h("div", { className: "dsa-cover" },
+							playing && playing.picUrl
+								? h("img", { src: playing.picUrl, alt: "", draggable: false })
+								: h("span", null, "🎵")
+						),
+						h("div", { className: "dsa-meta" }, [
+							h("div", { className: "dsa-title", title: title }, title),
+							h("div", { className: "dsa-artist" }, artist)
+						]),
+						h("div", { className: "dsa-actions" }, [
+							h("button", { className: "dsa-btn", title: "刷新", onClick: refresh }, ICONS.refresh),
+							h("button", { className: "dsa-btn", title: collapsed ? "展开" : "折叠", onClick: toggleCollapsed }, ICONS.collapse)
+						])
+					]),
+					// 主体
+					h("div", { className: "dsa-body" }, [
+						// 传输控制（含收藏）
+						h("div", { className: "dsa-controls" }, [
+							h("button", { className: "dsa-btn", title: "音量-", disabled: !canControl, onClick: function () { runCommand("volume-down"); } }, ICONS.voldown),
+							h("button", { className: "dsa-btn", title: "上一首", disabled: !canControl, onClick: function () { runCommand("prev"); } }, ICONS.prev),
+							h("button", {
+								className: "dsa-btn dsa-btn-primary",
+								title: "播放/暂停",
+								disabled: !canControl,
+								onClick: function () { runCommand("toggle-play"); }
+							}, playing && playing.isPlaying ? ICONS.pause : ICONS.play),
+							h("button", { className: "dsa-btn", title: "下一首", disabled: !canControl, onClick: function () { runCommand("next"); } }, ICONS.next),
+							h("button", { className: "dsa-btn", title: "音量+", disabled: !canControl, onClick: function () { runCommand("volume-up"); } }, ICONS.volup),
+							h("button", { className: "dsa-btn dsa-fav", title: "收藏/取消收藏当前歌曲", disabled: !canControl || !playing, onClick: function () { runCommand("toggle-favorite"); } }, "♥")
+						]),
+						// 播放列表
+						state && state.queue && Array.isArray(state.queue.items)
+							? h("div", { className: "dsa-queue" }, [
+									h("div", { className: "dsa-queue-title", onClick: function () { setQueueOpen(!queueOpen); } }, [
+										h("span", null, "播放列表"),
+										h("span", { className: "cnt" }, "(" + state.queue.items.length + " 首)"),
+										h("span", { className: "fold" }, queueOpen ? "▾" : "▸")
+									]),
+									queueOpen
+										? h("div", { className: "dsa-queue-list" }, state.queue.items.map(function (item, i) {
+												return h("div", {
+													key: item.id + "-" + i,
+													className: "dsa-qitem" + (i === state.queue.index ? " cur" : "")
+												}, [
+													h("span", { className: "n" }, (i + 1) + "."),
+													h("span", { className: "t" }, item.name),
+													h("span", { className: "s" }, item.artists || "")
+												]);
+											}))
+										: null
+								])
+							: null,
+						// 就绪提示 / 一键安装 / 一键就绪
+						state && !state.installed
+							? h("div", { className: "dsa-ready" }, [
+									h("span", { className: "dot bad" }),
+									h("span", { className: "txt" }, "未安装 AlgerMusicPlayer"),
+									h("button", { className: "act", disabled: busy, onClick: onInstall }, busy ? "安装中…" : "一键安装")
+								])
+							: needSetup(state)
+								? h("div", { className: "dsa-ready" }, [
+										h("span", { className: "dot " + dot }),
+										h("span", { className: "txt" }, readyText(state)),
+										h("button", { className: "act", disabled: busy, onClick: onSetup }, busy ? "处理中…" : "一键就绪")
+									])
+								: h("div", { className: "dsa-ready" }, [
+										h("span", { className: "dot ok" }),
+										h("span", { className: "txt" }, readyText(state) + (state && state.version ? "（" + state.version + "）" : ""))
+									]),
+						// 搜索类型切换
+						h("div", { className: "dsa-types" }, [
+							h("button", { className: "dsa-type" + (searchType === 1 ? " active" : ""), onClick: function () { switchType(1); } }, "歌曲"),
+							h("button", { className: "dsa-type" + (searchType === 1000 ? " active" : ""), onClick: function () { switchType(1000); } }, "歌单")
+						]),
+						// 搜索点歌
+						h("div", { className: "dsa-search" }, [
+							h("input", {
+								className: "dsa-input",
+								placeholder: searchType === 1 ? "搜歌名/歌手，回车或点搜索" : "搜歌单名，回车或点搜索",
+								value: query,
+								disabled: busy,
+								onChange: function (e) { setQuery(e.target.value); },
+								onKeyDown: onSearchKey
+							}),
+							h("button", { className: "dsa-go", disabled: searching || busy || !query.trim(), onClick: onSearch }, searching ? "…" : ICONS.search)
+						]),
+						// 搜索结果（歌曲：播放/加入/全部加入；歌单：播放歌单）
+						results && results.length > 0
+							? h("div", { className: "dsa-results" }, [
+									searchType === 1
+										? h("button", { className: "dsa-addall", disabled: busy, onClick: onAddAll }, "＋ 把搜索到的 " + results.length + " 首全部加入播放列表")
+										: null,
+									results.map(function (item) {
+										if (searchType === 1) {
+											return h("div", {
+												key: item.id,
+												className: "dsa-item",
+												title: "点击播放：" + item.name
+											}, [
+												h("span", { className: "t", onClick: function () { onPlaySong(item); }, style: { cursor: "pointer" } }, item.name),
+												h("span", { className: "s" }, item.artists || ""),
+												h("span", { className: "p" }, item.durationMs ? Math.floor(item.durationMs / 60000) + ":" + String(Math.floor(item.durationMs / 1000) % 60).padStart(2, "0") : ""),
+												h("button", { className: "dsa-rowbtn", title: "立即播放", disabled: busy, onClick: function (e) { e.stopPropagation(); onPlaySong(item); } }, "播放"),
+												h("button", { className: "dsa-rowbtn", title: "加入播放列表", disabled: busy, onClick: function (e) { e.stopPropagation(); onAddSong(item); } }, "＋加入")
+											]);
+										}
+										return h("div", {
+											key: item.id,
+											className: "dsa-item",
+											title: "播放歌单：" + item.name
+										}, [
+											h("span", { className: "t" }, item.name),
+											h("span", { className: "s" }, item.desc || ""),
+											h("button", { className: "dsa-rowbtn play", title: "整单播放", disabled: busy, onClick: function () { onPlayPlaylist(item); } }, "播放歌单")
+										]);
+									})
+								])
+							: null,
+						// 通知
+						notice
+							? h("div", { className: "dsa-notice" + (notice.kind ? " " + notice.kind : "") }, notice.text)
+							: null
+					])
+				])
+			]);
+		}
+
+		/**
+		 * 客户端插件入口：挂载浮动播放器与样式。
+		 * @param ctx - 客户端根上下文。
+		 */
+		function apply(ctx) {
+			ctx.effect(function () {
+				var root = document.createElement("div");
+				root.id = "dsh-alger-root";
+				document.body.appendChild(root);
+				injectCss();
+				ReactDOM.render(h(MusicPlayer), root);
+				return function () {
+					ReactDOM.unmountComponentAtNode(root);
+					if (root.parentNode) root.parentNode.removeChild(root);
+				};
+			});
+		}
+
+		var inject = [];
+		exports.apply = apply;
+		exports.inject = inject;
+		exports.name = "dsh-alger-music";
+		return module.exports;
+	}
+});
