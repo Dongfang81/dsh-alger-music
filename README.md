@@ -70,15 +70,19 @@ dsh plugin --profile web add /path/to/dsh-alger-music   # 或 git 仓库地址
 # 然后重启 dsh web 生效
 ```
 
-## 依赖说明（"安装即用"的两步）
+## 依赖说明（安装即用：无需提前安装 App）
 
 插件**驱动**开源播放器 AlgerMusicPlayer（播放/登录/歌词/下载都在 App 内，插件只做控制）。
-新机器上只需两步，均已在插件内自动化：
+**新机器无需提前安装 App**，装完插件后全流程自动化：
 
-1. **装 App**：`alger_install`（或浮动窗口"一键安装"）——自动按架构下载官方 DMG 并装进 /Applications；
-2. **就绪**：`alger_setup action=relaunch`（或"一键就绪"）——开启远程控制并以调试口重启 App。
+1. **装插件**：`dsh plugin --profile web add github:Dongfang81/dsh-alger-music` → 重启 dsh web；
+2. **装 App**（浮窗右上角按钮显示 **「安装」**，或对话里调 `alger_install`）：
+   - 自动按 CPU 架构（arm64/x64）下载官方 DMG（GitHub 直连 + **镜像兜底**，约 130MB）；
+   - 校验 DMG 完整性 → 挂载 → 安装进 `/Applications`（若检测到旧版正在运行会先退出，旧版备份为 `.bak`，不删除）→ 清理安装包；
+3. **连接**（按钮变 **「连接」**，或 `alger_setup action=relaunch`）：一键开启远程控制并以调试口重启 App；
+4. 之后即可对话点歌 / 小窗操作（按钮显示 **「已连接」**）。
 
-之后即可对话点歌 / 小窗操作。
+**两个前提**：① 需要网络下载（国内自动走镜像）；② 写入 `/Applications` 需要当前用户有管理员权限（个人电脑默认满足）。
 
 ## 配置（可选，默认值即可用）
 
