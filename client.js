@@ -163,6 +163,9 @@ window.__ModuleLoader__.load({
 			".dsa-pet-bubble-pos.left{right:74px}",
 			".dsa-pet-bubble{position:relative;background:rgba(13,15,24,0.9);border:1px solid rgba(255,255,255,0.22);border-radius:14px;padding:7px 12px;font-size:12px;line-height:1.4;color:#fff;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.35);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}",
 			".dsa-pet-bubble.sing{animation:dsa-bubble-bob .5s ease-in-out infinite alternate}",
+			".dsa-pet-bubble .dsa-marquee{display:flex;width:max-content;animation-name:dsa-marquee;animation-timing-function:linear;animation-iteration-count:infinite;will-change:transform}",
+			".dsa-pet-bubble .dsa-marquee span{white-space:nowrap;padding-right:28px}",
+			"@keyframes dsa-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}",
 			".dsa-pet-bubble-tail{position:absolute;top:50%;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;transform:translateY(-50%)}",
 			".dsa-pet-bubble-pos.right .dsa-pet-bubble-tail{left:-7px;border-right:7px solid rgba(13,15,24,0.9)}",
 			".dsa-pet-bubble-pos.left .dsa-pet-bubble-tail{right:-7px;border-left:7px solid rgba(13,15,24,0.9)}",
@@ -280,9 +283,10 @@ window.__ModuleLoader__.load({
 				setPos(null);
 			}, []);
 
-			// 视口内钳制
+			// 视口内钳制（仅展开态生效：收起态宠物锚点不受展开卡尺寸影响，否则会被每轮轮询往左拽）
 			React.useEffect(function () {
-				var height = cardRef.current ? cardRef.current.offsetHeight : (collapsed ? 40 : 260);
+				if (collapsed) return;
+				var height = cardRef.current ? cardRef.current.offsetHeight : 260;
 				var p = posRef.current;
 				if (!p) return;
 				var clamped = {
@@ -410,6 +414,16 @@ window.__ModuleLoader__.load({
 				}).catch(function () { setBusy(false); flash("err", "播放歌单失败"); });
 			};
 
+			var onAddPlaylist = function (item) {
+				setBusy(true);
+				queueApi({ action: "playlist-add", playlistId: item.id }).then(function (r) {
+					setBusy(false);
+					if (r && r.ok) flash("ok", "歌单已整单加入播放列表：" + (item.name || "") + "（" + (r.added || 0) + " 首）");
+					else flash("err", (r && r.guidance) || (r && r.error) || "加入失败");
+					setTimeout(refresh, 500);
+				}).catch(function () { setBusy(false); flash("err", "加入失败"); });
+			};
+
 			var onSetup = function () {
 				setBusy(true);
 				flash("", "正在就绪（重启 App 并开启远程控制，约 10~30 秒）…");
@@ -470,6 +484,7 @@ window.__ModuleLoader__.load({
 			var bubbleRef = React.useRef(null);
 			var [bubbleSide, setBubbleSide] = React.useState("right"); // 气泡在宠物右侧/左侧
 			var [bubbleMaxW, setBubbleMaxW] = React.useState(230);
+			var [overflowing, setOverflowing] = React.useState(false); // 歌词溢出→marquee 流动
 			// 歌词行与宠物锚点（展开/收起都计算，供测宽 effect 使用）
 			var position = state && state.playback ? state.playback.position : null;
 			var line = currentLrcLine(lrc, position);
@@ -477,27 +492,33 @@ window.__ModuleLoader__.load({
 				? line.text
 				: (playing ? title + (artist ? " · " + artist : "") : "未在播放");
 			var petX = pos ? pos.x : window.innerWidth - 110; // 与渲染用的默认位置一致
-			// 宠物固定不动；气泡锚定右侧，右侧放不下则自动换到左侧（含宽度钳制）
+			var marqueeDur = Math.max(6, Math.min(20, (bubbleText || "").length * 0.35)); // 流动速度随词长
+			// 宠物固定不动；气泡锚定右侧，宠物靠右（右侧可用空间不足阈值）则稳定换到左侧。
+			// 判定只看宠物几何位置，不随歌词长度变化——避免换边后又被下一句顶回右侧。
 			React.useEffect(function () {
 				if (!collapsed || !bubbleRef.current) return;
 				var measure = function () {
 					var el = bubbleRef.current;
 					if (!el) return;
-					var w = el.offsetWidth || 120;
 					var GAP = 12;
 					var petW = 64;
 					var MARGIN = 8;
+					var MIN_RIGHT = 160; // 右侧可用空间低于此阈值就固定放左侧
 					var spaceRight = window.innerWidth - (petX + petW + GAP) - MARGIN;
-					var side = spaceRight >= w ? "right" : "left";
+					var side = spaceRight >= MIN_RIGHT ? "right" : "left";
 					var max = side === "right" ? spaceRight : petX - GAP - MARGIN;
 					max = Math.max(120, Math.min(230, Math.floor(max)));
 					setBubbleSide(function (prev) { return prev === side ? prev : side; });
 					setBubbleMaxW(function (prev) { return prev === max ? prev : max; });
+					// 歌词溢出检测（marquee）
+					var inner = el.querySelector(".dsa-pet-bubble");
+					var over = inner ? inner.scrollWidth > inner.clientWidth + 2 : false;
+					setOverflowing(function (prev) { return prev === over ? prev : over; });
 				};
 				measure();
 				window.addEventListener("resize", measure);
 				return function () { window.removeEventListener("resize", measure); };
-			}, [bubbleText, collapsed, pos]);
+			}, [bubbleText, bubbleMaxW, collapsed, pos]);
 
 			// 折叠态：会唱歌的宠物（作者形象 + 歌词气泡）
 			if (collapsed) {
@@ -511,10 +532,15 @@ window.__ModuleLoader__.load({
 						className: "dsa-pet-bubble-pos " + bubbleSide
 					}, [
 						h("div", {
-							className: "dsa-pet-bubble" + (isPlaying ? " sing" : ""),
+							className: "dsa-pet-bubble" + (isPlaying ? " sing" : "") + (overflowing ? " flowing" : ""),
 							style: { maxWidth: bubbleMaxW }
 						}, [
-							h("span", null, bubbleText || "♪ ~ ♪ ~ ♪"),
+							overflowing
+								? h("div", { className: "dsa-marquee", style: { animationDuration: marqueeDur + "s" } }, [
+										h("span", null, bubbleText || ""),
+										h("span", null, bubbleText || "")
+									])
+								: h("span", null, bubbleText || "♪ ~ ♪ ~ ♪"),
 							h("span", { className: "dsa-pet-bubble-tail" })
 						])
 					]),
@@ -633,7 +659,7 @@ window.__ModuleLoader__.load({
 							}),
 							h("button", { className: "dsa-go", disabled: searching || busy || !query.trim(), onClick: onSearch }, searching ? "…" : ICONS.search)
 						]),
-						// 搜索结果（歌曲：播放/加入/全部加入；歌单：播放歌单）
+						// 搜索结果（歌曲：双击播放 + 加入；歌单：双击播放歌单 + 整单加入）
 						results && results.length > 0
 							? h("div", { className: "dsa-results" }, [
 									searchType === 1
@@ -644,23 +670,24 @@ window.__ModuleLoader__.load({
 											return h("div", {
 												key: item.id,
 												className: "dsa-item",
-												title: "点击播放：" + item.name
+												title: "双击播放：" + item.name,
+												onDoubleClick: function () { onPlaySong(item); }
 											}, [
-												h("span", { className: "t", onClick: function () { onPlaySong(item); }, style: { cursor: "pointer" } }, item.name),
+												h("span", { className: "t" }, item.name),
 												h("span", { className: "s" }, item.artists || ""),
 												h("span", { className: "p" }, item.durationMs ? Math.floor(item.durationMs / 60000) + ":" + String(Math.floor(item.durationMs / 1000) % 60).padStart(2, "0") : ""),
-												h("button", { className: "dsa-rowbtn", title: "立即播放", disabled: busy, onClick: function (e) { e.stopPropagation(); onPlaySong(item); } }, "播放"),
-												h("button", { className: "dsa-rowbtn", title: "加入播放列表", disabled: busy, onClick: function (e) { e.stopPropagation(); onAddSong(item); } }, "＋加入")
+												h("button", { className: "dsa-rowbtn", title: "加入播放列表（双击整行可播放）", disabled: busy, onClick: function (e) { e.stopPropagation(); onAddSong(item); } }, "＋加入")
 											]);
 										}
 										return h("div", {
 											key: item.id,
 											className: "dsa-item",
-											title: "播放歌单：" + item.name
+											title: "双击播放歌单：" + item.name,
+											onDoubleClick: function () { onPlayPlaylist(item); }
 										}, [
 											h("span", { className: "t" }, item.name),
 											h("span", { className: "s" }, item.desc || ""),
-											h("button", { className: "dsa-rowbtn play", title: "整单播放", disabled: busy, onClick: function () { onPlayPlaylist(item); } }, "播放歌单")
+											h("button", { className: "dsa-rowbtn", title: "歌单整单加入播放列表（双击整行可播放）", disabled: busy, onClick: function (e) { e.stopPropagation(); onAddPlaylist(item); } }, "＋加入")
 										]);
 									})
 								])
