@@ -645,7 +645,23 @@ window.__ModuleLoader__.load({
 								h("span", { className: "dot " + dot }),
 								h("span", null, connLabel)
 							]),
-							h("button", { className: "dsa-btn", title: "收起为宠物", onClick: toggleCollapsed }, ICONS.collapse)
+							// 收起为宠物：标准右向箭头图标（SVG，避免裸字符"一条线"）
+							h("button", {
+								className: "dsa-btn",
+								title: "收起为宠物",
+								onClick: toggleCollapsed
+							},
+								h("svg", {
+									width: 16,
+									height: 16,
+									viewBox: "0 0 16 16",
+									fill: "none",
+									stroke: "currentColor",
+									strokeWidth: 1.8,
+									strokeLinecap: "round",
+									strokeLinejoin: "round"
+								}, h("path", { d: "M6.5 4l4 4-4 4" }))
+							)
 						])
 					]),
 					// 主体
