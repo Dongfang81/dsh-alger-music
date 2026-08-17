@@ -20,7 +20,6 @@ window.__ModuleLoader__.load({
 		/** 展开宽度。 */
 		var WIDTH = 280;
 		/** 本地存储键。 */
-		var STORE_COLLAPSED = "dsh-alger:collapsed";
 		var STORE_X = "dsh-alger:x";
 		var STORE_Y = "dsh-alger:y";
 
@@ -245,9 +244,8 @@ window.__ModuleLoader__.load({
 		/* ---------- 浮动播放器 ---------- */
 		function MusicPlayer() {
 			var [state, setState] = React.useState(null);
-			var [collapsed, setCollapsed] = React.useState(function () {
-				try { return localStorage.getItem(STORE_COLLAPSED) === "1"; } catch { return false; }
-			});
+			// 默认宠物形态（收起）：每次打开先看到宠物，点击才切换播放器
+			var [collapsed, setCollapsed] = React.useState(true);
 			var [pos, setPos] = React.useState(null);
 			var posRef = React.useRef(null);
 			var dragRef = React.useRef(null);
@@ -353,9 +351,7 @@ window.__ModuleLoader__.load({
 			};
 
 			var toggleCollapsed = function () {
-				var next = !collapsed;
-				setCollapsed(next);
-				try { localStorage.setItem(STORE_COLLAPSED, next ? "1" : "0"); } catch { /* ignore */ }
+				setCollapsed(!collapsed);
 			};
 
 			var runCommand = function (action) {
