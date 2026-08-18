@@ -97,7 +97,7 @@ try {
 	expect(reducedAnimations.length > 0 && reducedAnimations.every((name) => name === 'none'), 'reduced motion must disable every Moony animation layer');
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	expect(browserErrors.length === 0, `gallery emitted browser errors:\n${browserErrors.join('\n')}`);
-	await page.screenshot({ path: join(here, '..', 'docs', 'moony-series.png'), fullPage: true });
+	await page.screenshot({ path: join(here, '..', 'docs', 'moony-series.png'), fullPage: true, animations: 'disabled' });
 
 	const reconciliationPage = await browser.newPage({ viewport: { width: 320, height: 240 } });
 	const reconciliationErrors = collectBrowserErrors(reconciliationPage);
