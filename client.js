@@ -35,13 +35,13 @@ window.__ModuleLoader__.load({
 			review: Object.freeze({ signal: "#10B981" })
 		});
 		var MOONY_CATALOG = Object.freeze([
-			Object.freeze({ id: "classic", name: "Moony Classic", role: "初代经典", ear: "classic", tail: "none", colors: Object.freeze({ ear: "#6D5BD0", highlight: "#A99AF2", rim: "#D8D0FF" }) }),
-			Object.freeze({ id: "pulse", name: "Moony · Pulse", role: "节拍追逐者", ear: "pulse", tail: "none", colors: Object.freeze({ ear: "#6944C4", highlight: "#C2A5FF", rim: "#DED1FF" }) }),
-			Object.freeze({ id: "echo", name: "Moony · Echo", role: "回忆共振者", ear: "echo", tail: "orbit", colors: Object.freeze({ ear: "#394B91", highlight: "#8EA8E8", rim: "#B8C8F5" }) }),
-			Object.freeze({ id: "drift", name: "Moony · Drift", role: "沉浸漂流者", ear: "drift", tail: "comet", colors: Object.freeze({ ear: "#6799A2", highlight: "#B9E0E2", rim: "#D5F2F1" }) }),
-			Object.freeze({ id: "spark", name: "Moony · Spark", role: "新声探索者", ear: "spark", tail: "none", colors: Object.freeze({ ear: "#C88322", highlight: "#F2D16D", rim: "#FFE4A3" }) }),
-			Object.freeze({ id: "chorus", name: "Moony · Chorus", role: "跟唱共鸣者", ear: "chorus", tail: "curl", colors: Object.freeze({ ear: "#B85388", highlight: "#F3A6C7", rim: "#FFD0E3" }) }),
-			Object.freeze({ id: "hush", name: "Moony · Hush", role: "安静陪伴者", ear: "hush", tail: "none", colors: Object.freeze({ ear: "#647654", highlight: "#B9C5A6", rim: "#DBE3CE" }) })
+			Object.freeze({ id: "classic", name: "Moony Classic", role: "初代经典", ear: "classic", tail: "none", motion: "float", colors: Object.freeze({ ear: "#6D5BD0", highlight: "#A99AF2", rim: "#D8D0FF" }) }),
+			Object.freeze({ id: "pulse", name: "Moony · Pulse", role: "节拍追逐者", ear: "pulse", tail: "none", motion: "beat", colors: Object.freeze({ ear: "#6944C4", highlight: "#C2A5FF", rim: "#DED1FF" }) }),
+			Object.freeze({ id: "echo", name: "Moony · Echo", role: "回忆共振者", ear: "echo", tail: "orbit", motion: "orbit", colors: Object.freeze({ ear: "#394B91", highlight: "#8EA8E8", rim: "#B8C8F5" }) }),
+			Object.freeze({ id: "drift", name: "Moony · Drift", role: "沉浸漂流者", ear: "drift", tail: "comet", motion: "drift", colors: Object.freeze({ ear: "#6799A2", highlight: "#B9E0E2", rim: "#D5F2F1" }) }),
+			Object.freeze({ id: "spark", name: "Moony · Spark", role: "新声探索者", ear: "spark", tail: "none", motion: "scan", colors: Object.freeze({ ear: "#C88322", highlight: "#F2D16D", rim: "#FFE4A3" }) }),
+			Object.freeze({ id: "chorus", name: "Moony · Chorus", role: "跟唱共鸣者", ear: "chorus", tail: "curl", motion: "chorus", colors: Object.freeze({ ear: "#B85388", highlight: "#F3A6C7", rim: "#FFD0E3" }) }),
+			Object.freeze({ id: "hush", name: "Moony · Hush", role: "安静陪伴者", ear: "hush", tail: "none", motion: "hush", colors: Object.freeze({ ear: "#647654", highlight: "#B9C5A6", rim: "#DBE3CE" }) })
 		]);
 		var MOONY_BY_ID = Object.freeze(MOONY_CATALOG.reduce(function (out, pet) { out[pet.id] = pet; return out; }, {}));
 
@@ -76,7 +76,7 @@ window.__ModuleLoader__.load({
 
 		function resolveMoonyState(input) {
 			var value = input && typeof input === "object" ? input : {};
-			var status = typeof value.agentStatus === "string" && MOONY_STATUS[value.agentStatus] ? value.agentStatus : "idle";
+			var status = typeof value.agentStatus === "string" && Object.prototype.hasOwnProperty.call(MOONY_STATUS, value.agentStatus) ? value.agentStatus : "idle";
 			var mediaUrl = typeof value.mediaUrl === "string" && value.mediaUrl.trim() ? value.mediaUrl.trim() : null;
 			return { pet: getMoony(value.petId), status: status, faceMode: mediaUrl ? "media" : "blank", mediaUrl: mediaUrl };
 		}
@@ -90,11 +90,11 @@ window.__ModuleLoader__.load({
 				pet.tail !== "none" ? h("span", { key: "tail", className: "dsa-moony-tail", "data-moony-tail": pet.tail }) : null,
 				h("span", { key: "left", className: "dsa-moony-ear left" }, h("i", { className: "dsa-moony-signal" })),
 				h("span", { key: "right", className: "dsa-moony-ear right" }, h("i", { className: "dsa-moony-signal" })),
-				h("span", { key: "face", className: "dsa-moony-face" }, value.faceMode === "media" ? h("img", { src: value.mediaUrl, alt: "", draggable: false, onError: function (event) { event.currentTarget.hidden = true; } }) : null)
+				h("span", { key: "face", className: "dsa-moony-face" }, value.faceMode === "media" ? h("img", { key: value.mediaUrl, src: value.mediaUrl, alt: "", draggable: false, onLoad: function (event) { event.currentTarget.hidden = false; }, onError: function (event) { event.currentTarget.hidden = true; } }) : null)
 			];
 			return h("div", {
 				className: "dsa-pet dsa-moony-pet" + (input.isPlaying ? " singing" : "") + " dsa-agent-" + value.status,
-				"data-moony-id": pet.id, "data-moony-ear": pet.ear, style: style,
+				"data-moony-id": pet.id, "data-moony-ear": pet.ear, "data-moony-motion": pet.motion, style: style,
 				title: input.title || pet.name, onPointerDown: input.onPointerDown, onClick: input.onClick
 			}, h("span", { className: "dsa-moony-rhythm" }, parts));
 		}
@@ -165,7 +165,7 @@ window.__ModuleLoader__.load({
 			".dsa-moony-picker{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px}.dsa-moony-choice{flex:none;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(255,255,255,.05);color:rgba(255,255,255,.72);padding:3px 8px;font:10px/16px system-ui;cursor:pointer}",
 			".dsa-moony-choice:hover{background:rgba(255,255,255,.11)}.dsa-moony-choice.on{border-color:var(--dsw-alias-accent-6,#8b5cf6);background:rgba(139,92,246,.2);color:#fff}",
 			".dsa-pet:active{cursor:grabbing}.dsa-moony-rhythm{position:absolute;inset:0;display:block}",
-			".dsa-pet.singing .dsa-moony-rhythm{animation:dsa-moony-rhythm .55s ease-in-out infinite alternate}",
+			".dsa-moony-pet[data-moony-motion='float'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-float .86s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='beat'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-beat .44s cubic-bezier(.4,0,.2,1) infinite alternate}.dsa-moony-pet[data-moony-motion='orbit'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-orbit 1.6s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='drift'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-drift 1.35s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-scan .72s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-chorus .62s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-hush 1.8s ease-in-out infinite alternate}",
 			".dsa-moony-face{position:absolute;inset:0;z-index:3;display:block;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,.9);background:linear-gradient(145deg,#f5f2f8 4%,#d6cfdf 58%,#aaa1b9);box-shadow:inset 4px 5px 8px rgba(255,255,255,.58),inset -6px -7px 11px rgba(55,40,76,.14),0 8px 18px rgba(0,0,0,.34)}",
 			".dsa-moony-face img{width:100%;height:100%;display:block;object-fit:cover}",
 			".dsa-moony-ear{position:absolute;z-index:1;display:block;background:linear-gradient(145deg,var(--moony-ear-highlight),var(--moony-ear));border:3px solid var(--moony-rim);box-shadow:inset 3px 3px 6px rgba(255,255,255,.2),inset -4px -5px 7px rgba(30,18,60,.18),0 5px 9px rgba(0,0,0,.2);transform-origin:50% 90%}",
@@ -181,10 +181,14 @@ window.__ModuleLoader__.load({
 			".dsa-moony-tail{position:absolute;z-index:2;pointer-events:none}.dsa-moony-tail[data-moony-tail='orbit']{right:-8px;bottom:-5px;width:38px;height:32px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(25deg)}",
 			".dsa-moony-tail[data-moony-tail='comet']{right:-12px;bottom:5px;width:38px;height:17px;border-radius:70% 30% 70% 30%;background:linear-gradient(90deg,var(--moony-ear-highlight),transparent);transform:rotate(24deg)}",
 			".dsa-moony-tail[data-moony-tail='curl']{right:-7px;bottom:-6px;width:31px;height:31px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(12deg)}",
+			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='float'] .dsa-moony-ear{animation:dsa-moony-idle-float 3.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='beat'] .dsa-moony-ear{animation:dsa-moony-idle-beat 1.15s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-ear{animation:dsa-moony-idle-orbit 3.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-ear{animation:dsa-moony-idle-drift 4.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='scan'] .dsa-moony-ear{animation:dsa-moony-idle-scan 2.1s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-ear{animation:dsa-moony-idle-chorus 2.7s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='hush'] .dsa-moony-ear{animation:dsa-moony-idle-hush 5s ease-in-out infinite alternate}",
+			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-tail{animation:dsa-moony-idle-tail-orbit 5.2s linear infinite}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-tail{animation:dsa-moony-idle-tail-drift 3.6s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-tail{animation:dsa-moony-idle-tail-chorus 1.4s ease-in-out infinite alternate}",
 			".dsa-agent-running .dsa-moony-ear,.dsa-agent-waiting .dsa-moony-ear,.dsa-agent-failed .dsa-moony-ear,.dsa-agent-review .dsa-moony-ear{border-color:var(--moony-signal);filter:drop-shadow(0 0 5px var(--moony-signal))}",
 			".dsa-agent-running .dsa-moony-ear{animation:dsa-moony-running .52s ease-in-out infinite alternate}.dsa-agent-running .dsa-moony-ear.right{animation-direction:alternate-reverse}.dsa-agent-waiting .dsa-moony-ear{animation:dsa-moony-waiting 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-ear{animation:dsa-moony-failed .24s linear 3}.dsa-agent-review .dsa-moony-ear{animation:dsa-moony-review 1s ease-in-out infinite alternate}",
 			".dsa-agent-running .dsa-moony-tail{animation:dsa-moony-tail-sway .52s ease-in-out infinite alternate}.dsa-agent-waiting .dsa-moony-tail{animation:dsa-moony-tail-listen 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-tail{animation:dsa-moony-tail-failed .24s linear 3}.dsa-agent-review .dsa-moony-tail{animation:dsa-moony-tail-review 1s ease-in-out infinite alternate}",
-			"@keyframes dsa-moony-rhythm{from{translate:0 0}to{translate:0 -4px}}@keyframes dsa-moony-running{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-waiting{0%,100%{translate:-1px 0}50%{translate:2px 1px}}@keyframes dsa-moony-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-review{from{translate:0 0}to{translate:0 -3px}}",
+			"@keyframes dsa-moony-listen-float{from{translate:0 0}to{translate:0 -3px}}@keyframes dsa-moony-listen-beat{from{translate:0 0;scale:1}to{translate:0 -3px;scale:1.025}}@keyframes dsa-moony-listen-orbit{0%,100%{rotate:-1.5deg}50%{rotate:1.5deg}}@keyframes dsa-moony-listen-drift{from{translate:-1px 1px}to{translate:1px -3px}}@keyframes dsa-moony-listen-scan{from{rotate:-1deg}to{rotate:2deg}}@keyframes dsa-moony-listen-chorus{from{translate:0 0;scale:1}to{translate:0 -4px;scale:1.02}}@keyframes dsa-moony-listen-hush{from{translate:0 0}to{translate:0 -1px}}",
+			"@keyframes dsa-moony-idle-float{from{rotate:-2deg}to{rotate:2deg}}@keyframes dsa-moony-idle-beat{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-orbit{from{rotate:-2deg}to{rotate:3deg}}@keyframes dsa-moony-idle-drift{from{translate:0 0}to{translate:0 2px}}@keyframes dsa-moony-idle-scan{from{rotate:-1deg}to{rotate:3deg}}@keyframes dsa-moony-idle-chorus{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-hush{from{scale:1}to{scale:.98}}@keyframes dsa-moony-idle-tail-orbit{to{rotate:1turn}}@keyframes dsa-moony-idle-tail-drift{from{translate:0 0}to{translate:1px -2px}}@keyframes dsa-moony-idle-tail-chorus{from{rotate:-2deg}to{rotate:5deg}}",
+			"@keyframes dsa-moony-running{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-waiting{0%,100%{translate:-1px 0}50%{translate:2px 1px}}@keyframes dsa-moony-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-review{from{translate:0 0}to{translate:0 -3px}}",
 			"@keyframes dsa-moony-tail-sway{from{rotate:-5deg}to{rotate:7deg}}@keyframes dsa-moony-tail-listen{0%,100%{translate:0 0}50%{translate:0 -2px}}@keyframes dsa-moony-tail-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-tail-review{from{translate:0 0}to{translate:0 -2px}}",
 			"@media (prefers-reduced-motion:reduce){.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-tail{animation:none!important}}"
 		].join("\n");

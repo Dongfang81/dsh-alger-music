@@ -37,6 +37,8 @@ test('catalog contains Classic plus the six approved first-wave characters', () 
 	const { MOONY_CATALOG } = loadClient();
 	assert.deepEqual(Array.from(MOONY_CATALOG, (pet) => pet.id), ['classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush']);
 	assert.equal(new Set(Array.from(MOONY_CATALOG, (pet) => pet.id)).size, 7);
+	assert.deepEqual(Array.from(MOONY_CATALOG, (pet) => pet.motion), ['float', 'beat', 'orbit', 'drift', 'scan', 'chorus', 'hush']);
+	assert.equal(new Set(Array.from(MOONY_CATALOG, (pet) => pet.motion)).size, 7);
 	for (const pet of MOONY_CATALOG) {
 		assert.match(pet.name, /^Moony/);
 		assert.match(pet.colors.ear, /^#[0-9A-F]{6}$/);
@@ -68,6 +70,13 @@ test('prototype property pet IDs fall back to Classic', () => {
 	for (const id of ['constructor', 'toString', '__proto__']) {
 		assert.equal(getMoony(id).id, 'classic');
 		assert.equal(resolveMoonyState({ petId: id }).pet.id, 'classic');
+	}
+});
+
+test('prototype property agent statuses fall back to idle', () => {
+	const { resolveMoonyState } = loadClient();
+	for (const status of ['constructor', 'toString', '__proto__']) {
+		assert.equal(resolveMoonyState({ agentStatus: status }).status, 'idle');
 	}
 });
 
@@ -301,16 +310,41 @@ test('Echo renders one tail and media only inside the face layer', () => {
 	assert.equal(target.hidden, true);
 });
 
+test('a valid media source recovers an image node hidden by an earlier load failure', () => {
+	const { MoonyPet } = loadClient();
+	const failed = findNodes(
+		MoonyPet({ petId: 'echo', mediaUrl: 'https://img.test/broken.jpg' }),
+		(node) => node.type === 'img'
+	)[0];
+	const imageNode = { hidden: false };
+	failed.props.onError({ currentTarget: imageNode });
+	assert.equal(imageNode.hidden, true);
+
+	const recovered = findNodes(
+		MoonyPet({ petId: 'echo', mediaUrl: 'https://img.test/valid.jpg' }),
+		(node) => node.type === 'img'
+	)[0];
+	assert.equal(recovered.props.key, 'https://img.test/valid.jpg');
+	recovered.props.onLoad({ currentTarget: imageNode });
+	assert.equal(imageNode.hidden, false);
+});
+
 test('Moony CSS defines every skin, tail, signal, and reduced-motion fallback', () => {
-	const { MOONY_CSS } = loadClient();
+	const { MOONY_CATALOG, MOONY_CSS, MoonyPet } = loadClient();
 	for (const ear of ['classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush']) {
 		assert.match(MOONY_CSS, new RegExp(`data-moony-ear=["']${ear}["']`));
+	}
+	for (const pet of MOONY_CATALOG) {
+		const tree = MoonyPet({ petId: pet.id, agentStatus: 'idle', isPlaying: true });
+		assert.equal(tree.props['data-moony-motion'], pet.motion);
+		assert.match(MOONY_CSS, new RegExp(`data-moony-motion=["']${pet.motion}["'][^}]*\\.dsa-moony-rhythm\\{animation:dsa-moony-listen-${pet.motion}`));
+		assert.match(MOONY_CSS, new RegExp(`dsa-agent-idle\\[data-moony-motion=["']${pet.motion}["']\\][^}]*\\.dsa-moony-ear\\{animation:dsa-moony-idle-${pet.motion}`));
 	}
 	for (const tail of ['orbit', 'comet', 'curl']) {
 		assert.match(MOONY_CSS, new RegExp(`data-moony-tail=["']${tail}["']`));
 	}
 	assert.match(MOONY_CSS, /--moony-signal/);
-	assert.match(MOONY_CSS, /prefers-reduced-motion:\s*reduce/);
+	assert.match(MOONY_CSS, /prefers-reduced-motion:\s*reduce[^}]*\.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-tail\{animation:none!important/);
 	assert.match(MOONY_CSS, /dsa-agent-running \.dsa-moony-tail/);
 	assert.match(MOONY_CSS, /dsa-agent-failed \.dsa-moony-tail/);
 	assert.doesNotMatch(MOONY_CSS, /dsa-agent-running[^}]*background:/);

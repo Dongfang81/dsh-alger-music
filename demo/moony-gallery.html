@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Moony First Wave Gallery</title>
 <style>
-html,body{margin:0;min-height:100%;background:linear-gradient(145deg,#0d0b14,#181126);color:#fff;font-family:system-ui,-apple-system,"PingFang SC",sans-serif}main{max-width:1080px;margin:auto;padding:40px 28px}.gallery{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.tile{min-height:220px;display:grid;place-items:center;padding:24px 12px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:rgba(255,255,255,.05)}.pet-slot{width:96px;height:96px;display:grid;place-items:center}.pet-slot.small{transform:scale(.625);height:62px}.tile h2{margin:10px 0 2px;font-size:15px}.tile p{margin:0;color:rgba(255,255,255,.6);font-size:11px;text-align:center}@media(max-width:780px){.gallery{grid-template-columns:repeat(2,1fr)}}
+html,body{margin:0;min-height:100%;background:radial-gradient(circle at 50% -10%,#302248 0,#171120 35%,#0d0b14 78%);color:#fff;font-family:system-ui,-apple-system,"PingFang SC",sans-serif}*{box-sizing:border-box}main{max-width:1120px;margin:auto;padding:42px 28px 60px}.eyebrow{margin:0 0 7px;color:#c9baf3;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}h1{margin:0;font-size:34px;letter-spacing:-.035em}header>p{margin:10px 0 0;color:rgba(255,255,255,.62)}section{margin-top:34px}.section-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:15px}.section-head h2{margin:0;font-size:18px}.section-head p{margin:0;color:rgba(255,255,255,.48);font-size:11px}.identity-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.11);border-radius:22px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));box-shadow:inset 0 1px rgba(255,255,255,.07),0 16px 36px rgba(0,0,0,.14)}.identity-card{min-height:230px;padding:22px 14px 16px;text-align:center}.pet-duo{min-height:128px;display:flex;align-items:center;justify-content:center;gap:24px}.pet-frame{width:100px;height:112px;display:grid;place-items:center;overflow:visible}.pet-frame.small{width:60px;transform:scale(.625)}.identity-card h3,.state-card h3,.recovery-card h3,.boundary-card h3{margin:7px 0 3px;font-size:14px}.identity-card p,.state-card p,.recovery-card p,.boundary-card p{margin:0;color:rgba(255,255,255,.5);font-size:10px}.motion-badge{position:absolute;right:11px;top:10px;padding:3px 7px;border:1px solid rgba(255,255,255,.1);border-radius:999px;color:rgba(255,255,255,.48);font:9px/1.4 ui-monospace,monospace}.state-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.state-card{padding:18px 8px 14px;text-align:center}.state-card .pet-duo{gap:12px;min-height:110px}.state-card .pet-frame{width:76px;height:94px}.state-card .pet-frame.compact{width:54px;transform:scale(.72)}.state-dot{display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%;background:var(--state-color)}.verification-grid{display:grid;grid-template-columns:1.1fr 2fr;gap:14px}.recovery-card{min-height:190px;display:grid;place-items:center;padding:18px;text-align:center}.boundary-card{padding:16px}.boundary-row{display:flex;align-items:center;justify-content:space-around;gap:12px}.boundary-frame{width:128px;height:128px;display:grid;place-items:center;overflow:hidden;border:1px dashed rgba(255,255,255,.14);border-radius:18px;background:rgba(0,0,0,.12);text-align:center}.boundary-frame>span{position:absolute;align-self:end;margin-bottom:7px;color:rgba(255,255,255,.36);font-size:9px}.legend{display:flex;gap:14px;margin-top:12px;color:rgba(255,255,255,.4);font-size:10px}.legend span::before{content:'';display:inline-block;width:6px;height:6px;margin-right:5px;border-radius:50%;background:#8b5cf6}@media(max-width:860px){.identity-grid{grid-template-columns:repeat(2,1fr)}.state-grid{grid-template-columns:repeat(2,1fr)}.verification-grid{grid-template-columns:1fr}.boundary-row{flex-wrap:wrap}}@media(prefers-reduced-motion:reduce){.motion-badge::after{content:' · reduced'}}
 </style>
 <script>
 function domElement(type, props, ...children) {
@@ -40,19 +40,53 @@ window.__ModuleLoader__ = { load(definition) {
 <script src="../client.js"></script>
 </head>
 <body>
-<main><h1>Moony Classic + First Wave</h1><p>空白月面 · 月化耳朵 · 2.5D 软胶</p><section class="gallery" id="gallery"></section></main>
+<main>
+  <header><p class="eyebrow">Moony Series · Visual Gate</p><h1>Classic + First Wave</h1><p>空白月面 · 媒体内容 · 角色待机与听歌律动 · 五种 DSH 信号状态</p></header>
+  <section><div class="section-head"><h2>角色身份与双模式</h2><p>64px 空白待机 / 40px 媒体听歌</p></div><div class="identity-grid" id="identity-gallery"></div></section>
+  <section><div class="section-head"><h2>Agent 状态矩阵</h2><p>每种状态同时验证 blank + media，角色本色保持不变</p></div><div class="state-grid" id="state-gallery"></div></section>
+  <section><div class="section-head"><h2>容错与边界</h2><p>失败图片恢复 / 耳尾边界 / 尾巴位于脸后</p></div><div class="verification-grid"><article class="card recovery-card" data-gallery-kind="recovery" id="recovery-card"></article><article class="card boundary-card"><div class="boundary-row" id="boundary-gallery"></div><div class="legend"><span>overflow safe frame</span><span>face z-index above tail</span><span>no feature layer on media</span></div></article></div></section>
+</main>
 <script>
 const style = document.createElement('style'); style.textContent = window.moonyClient.MOONY_CSS; document.head.appendChild(style);
-for (const pet of window.moonyClient.MOONY_CATALOG) {
-  const tile = document.createElement('article'); tile.className = 'tile';
-  const normal = document.createElement('div'); normal.className = 'pet-slot';
-  normal.append(window.moonyClient.MoonyPet({ petId: pet.id, agentStatus: 'idle', mediaUrl: null, isPlaying: false }));
-  const small = document.createElement('div'); small.className = 'pet-slot small';
-  small.append(window.moonyClient.MoonyPet({ petId: pet.id, agentStatus: 'review', mediaUrl: null, isPlaying: false }));
-  tile.append(normal, small);
-  const name = document.createElement('h2'); name.textContent = pet.name;
-  const role = document.createElement('p'); role.textContent = pet.role;
-  tile.append(name, role); document.querySelector('#gallery').append(tile);
+const mediaUrl = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#5b3f8f"/><stop offset="1" stop-color="#f0a5c6"/></linearGradient></defs><rect width="128" height="128" fill="url(#g)"/><circle cx="45" cy="48" r="24" fill="#f6e8d8" opacity=".9"/><path d="M12 101 Q48 68 82 91 T128 78 V128 H0Z" fill="#171120" opacity=".72"/></svg>');
+function petFrame({ petId, status = 'idle', media = false, playing = false, className = '', source = mediaUrl }) {
+  const frame = document.createElement('div'); frame.className = 'pet-frame ' + className; frame.dataset.faceMode = media ? 'media' : 'blank';
+  frame.append(window.moonyClient.MoonyPet({ petId, agentStatus: status, mediaUrl: media ? source : null, isPlaying: playing }));
+  return frame;
 }
+for (const pet of window.moonyClient.MOONY_CATALOG) {
+  const tile = document.createElement('article'); tile.className = 'card identity-card'; tile.dataset.galleryKind = 'identity'; tile.dataset.petId = pet.id;
+  const badge = document.createElement('span'); badge.className = 'motion-badge'; badge.textContent = pet.motion;
+  const duo = document.createElement('div'); duo.className = 'pet-duo'; duo.append(petFrame({ petId: pet.id }), petFrame({ petId: pet.id, media: true, playing: true, className: 'small' }));
+  const name = document.createElement('h3'); name.textContent = pet.name;
+  const role = document.createElement('p'); role.textContent = pet.role;
+  tile.append(badge, duo, name, role); document.querySelector('#identity-gallery').append(tile);
+}
+const stateColors = { idle: 'transparent', running: '#3B82F6', waiting: '#F59E0B', failed: '#EF4444', review: '#10B981' };
+for (const status of Object.keys(stateColors)) {
+  const card = document.createElement('article'); card.className = 'card state-card'; card.dataset.galleryKind = 'state'; card.dataset.status = status; card.style.setProperty('--state-color', stateColors[status]);
+  const duo = document.createElement('div'); duo.className = 'pet-duo';
+  duo.append(petFrame({ petId: 'pulse', status }), petFrame({ petId: 'pulse', status, media: true, playing: true, className: 'compact' }));
+  const name = document.createElement('h3'); name.innerHTML = '<span class="state-dot"></span>' + status;
+  const note = document.createElement('p'); note.textContent = status === 'idle' ? '自然待机' : '信号层 + 状态动作';
+  card.append(duo, name, note); document.querySelector('#state-gallery').append(card);
+}
+for (const petId of ['echo', 'drift', 'chorus']) {
+  const pet = window.moonyClient.MOONY_CATALOG.find((item) => item.id === petId);
+  const frame = document.createElement('div'); frame.className = 'boundary-frame'; frame.dataset.boundaryFrame = petId;
+  frame.append(window.moonyClient.MoonyPet({ petId, agentStatus: 'idle', mediaUrl, isPlaying: false }));
+  const label = document.createElement('span'); label.textContent = pet.name.replace('Moony · ', ''); frame.append(label); document.querySelector('#boundary-gallery').append(frame);
+}
+const recoveryCard = document.querySelector('#recovery-card');
+const failedMediaUrl = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+const recoveryFrame = petFrame({ petId: 'classic', status: 'failed', media: true, source: failedMediaUrl }); recoveryCard.append(recoveryFrame);
+const failedImage = recoveryFrame.querySelector('img'); failedImage.dispatchEvent(new Event('error'));
+setTimeout(() => {
+  const validFrame = petFrame({ petId: 'classic', status: 'review', media: true }); recoveryFrame.replaceWith(validFrame);
+  validFrame.querySelector('img').dispatchEvent(new Event('load'));
+  recoveryCard.dataset.recovered = 'true';
+  const name = document.createElement('h3'); name.textContent = 'failed → valid';
+  const note = document.createElement('p'); note.textContent = '图片节点恢复为可见媒体脸'; recoveryCard.append(name, note);
+}, 0);
 </script>
 </body></html>
