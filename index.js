@@ -190,7 +190,7 @@ function buildActions(cfg, client, shared) {
 			return { ok: true, text };
 		},
 
-		/** alger_recommend：随机推荐播放（不知道听什么时用） */
+		/** alger_recommend：推荐播放（不知道听什么时用） */
 		async recommend() {
 			const steps = [];
 			const log = (s) => steps.push(String(s));
@@ -204,34 +204,40 @@ function buildActions(cfg, client, shared) {
 						: `App 未运行。请调用 alger_setup action=relaunch 启动后重试。`
 				};
 			}
-			// 1) 从 App 音乐 API 拉推荐/热门候选，随机挑一首
-			let songs = [];
+			// 1) 拉推荐歌单列表，随机挑一个合适的歌单（过滤曲目过少的）
+			let playlists = [];
 			try {
-				const data = await client.getJson(`${client.apiBase}/personalized/newsong?limit=30`);
-				const list = data?.result || [];
-				songs = list
-					.map((i) => i?.song || i)
-					.filter((s) => s && s.id && s.name);
+				const data = await client.getJson(`${client.apiBase}/personalized?limit=30`);
+				playlists = (data?.result || [])
+					.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3)
+					.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
 			} catch {
-				/* 降级到热门榜 */
+				/* 降级到热门歌单 */
 			}
-			if (songs.length === 0) {
+			if (playlists.length === 0) {
 				try {
-					const data = await client.getJson(`${client.apiBase}/top/song?limit=30`);
-					songs = (data?.data || []).filter((s) => s && s.id && s.name);
+					const data = await client.getJson(`${client.apiBase}/top/playlist?limit=30`);
+					playlists = (data?.playlists || [])
+						.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3)
+						.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
 				} catch {
 					/* 忽略 */
 				}
 			}
-			if (songs.length === 0) {
+			if (playlists.length === 0) {
 				return { ok: false, steps: [...steps, '推荐接口无结果'], guidance: '请稍后再试，或直接搜索点歌。' };
 			}
-			const song = songs[Math.floor(Math.random() * songs.length)];
-			const artists = (song.ar || song.artists || []).map((a) => a.name).join('/');
-			log(`随机命中: [${song.id}] ${song.name}${artists ? ' - ' + artists : ''}`);
+			const plMeta = playlists[Math.floor(Math.random() * playlists.length)];
+			log(`随机命中歌单: [${plMeta.id}] ${plMeta.name}（${plMeta.trackCount} 首）`);
 
-			// 2) CDP 播放（与 alger_play 同路径）
-			const script = buildPlayScript(song.name || '', song);
+			// 2) 取歌单歌曲，整单播放（与 alger_queue action=playlist 同路径）
+			const pl = await client.playlist(plMeta.id, 500);
+			const songs = (pl?.tracks || []).filter((s) => s && s.id && s.name);
+			if (songs.length === 0) {
+				return { ok: false, steps: [...steps, `歌单「${plMeta.name}」无可播放歌曲`], guidance: '请稍后再试。' };
+			}
+			log(`歌单「${plMeta.name}」共 ${pl?.trackCount ?? songs.length} 首，取得 ${songs.length} 首，从「${songs[0].name}」开始`);
+			const script = buildQueueScript(songs, 'replace');
 			let out;
 			try {
 				out = await cdpEvaluate(cfg.cdpPort, script, { timeoutMs: cfg.timeoutMs });
@@ -240,8 +246,16 @@ function buildActions(cfg, client, shared) {
 			}
 			steps.push(...(out?.steps || []));
 			if (!out?.ok) return { ok: false, steps, guidance: out?.error || '推荐播放失败' };
-			shared.setNotice('🎵 推荐播放：' + song.name);
-			return { ok: true, steps, playedName: song.name, playedId: song.id };
+			shared.setNotice('♫ 推荐歌单：' + plMeta.name + '（' + (out.queueLength ?? songs.length) + ' 首）');
+			return {
+				ok: true,
+				steps,
+				playedName: out.playedName ?? songs[0].name,
+				playlistId: plMeta.id,
+				playlistName: plMeta.name,
+				added: out.added ?? songs.length,
+				queueLength: out.queueLength ?? songs.length
+			};
 		},
 
 		/** alger_setup */
@@ -1017,14 +1031,14 @@ function buildTools(cfg, actions) {
 	const recommend = {
 		name: 'alger_recommend',
 		description:
-			'推荐播放：不知道听什么时，从 App 音乐 API 的推荐/热门歌曲中随机挑一首立即播放（走 CDP，与 alger_play 同路径）。',
+			'推荐播放：不知道听什么时，从 App 音乐 API 的推荐歌单中随机挑一个整单播放（替换当前队列并立即开播，能连续播很久；走 CDP，与 alger_queue action=playlist 同路径）。',
 		parameters: compileParameters({}),
 		output: {
 			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
 			render: (_args, value) => {
 				const rec = asRecord(value);
 				const lines = (rec.steps || []).map((s) => '· ' + s);
-				if (rec.ok) lines.push('🎵 推荐播放：' + (rec.playedName || ''));
+				if (rec.ok) lines.push('♫ 推荐歌单：' + (rec.playlistName || '') + '（' + (rec.queueLength ?? '') + ' 首）');
 				if (rec.guidance) lines.push('提示: ' + rec.guidance);
 				return lines;
 			}
