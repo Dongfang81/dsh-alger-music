@@ -331,6 +331,7 @@ window.__ModuleLoader__.load({
 			var cardRef = React.useRef(null);
 			var [query, setQuery] = React.useState("");
 			var [searchType, setSearchType] = React.useState(1); // 1=歌曲 1000=歌单
+			var [searched, setSearched] = React.useState(false); // 是否已搜索过（控制歌曲/歌单 tab 显隐）
 			var [searching, setSearching] = React.useState(false);
 			var [results, setResults] = React.useState(null);
 			var [queueOpen, setQueueOpen] = React.useState(false);
@@ -485,6 +486,7 @@ window.__ModuleLoader__.load({
 			var onSearch = function () {
 				var q = query.trim();
 				if (!q) return;
+				setSearched(true);
 				setSearching(true);
 				setResults(null);
 				searchMusic(q, searchType).then(function (r) {
@@ -507,6 +509,7 @@ window.__ModuleLoader__.load({
 					if (r && r.ok) {
 						flash("ok", "已点播：" + (r.playedName || item.name) + (r.confirmed ? "" : "（待确认）"));
 						setResults(null);
+						setSearched(false);
 						setQuery("");
 					} else {
 						flash("err", (r && r.guidance) || (r && r.error) || "点歌失败");
@@ -814,12 +817,7 @@ window.__ModuleLoader__.load({
 										: null
 								])
 							: null,
-						// 搜索类型切换
-						h("div", { className: "dsa-types" }, [
-							h("button", { className: "dsa-type" + (searchType === 1 ? " active" : ""), onClick: function () { switchType(1); } }, "歌曲"),
-							h("button", { className: "dsa-type" + (searchType === 1000 ? " active" : ""), onClick: function () { switchType(1000); } }, "歌单")
-						]),
-						// 搜索点歌
+						// 搜索点歌（未搜索时只显示输入框，不显示歌曲/歌单 tab）
 						h("div", { className: "dsa-search" }, [
 							h("input", {
 								className: "dsa-input",
@@ -841,7 +839,13 @@ window.__ModuleLoader__.load({
 									])
 							)
 						]),
-						// 搜索结果（歌曲：双击播放 + 加入；歌单：双击播放歌单 + 整单加入）
+						// 搜索结果（搜索后出现歌曲/歌单 tab，可左右切换重新搜索；歌曲：双击播放 + 加入；歌单：双击播放歌单 + 整单加入）
+						searched
+							? h("div", { className: "dsa-types" }, [
+									h("button", { className: "dsa-type" + (searchType === 1 ? " active" : ""), onClick: function () { switchType(1); } }, "歌曲"),
+									h("button", { className: "dsa-type" + (searchType === 1000 ? " active" : ""), onClick: function () { switchType(1000); } }, "歌单")
+								])
+							: null,
 						results && results.length > 0
 							? h("div", { className: "dsa-results" }, [
 									searchType === 1
