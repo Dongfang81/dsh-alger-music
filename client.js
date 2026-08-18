@@ -101,15 +101,16 @@ window.__ModuleLoader__.load({
 			".dsa-btn-primary:hover{filter:brightness(1.05)}",
 			".dsa-mode{font-size:10px;min-width:32px;padding:0 3px;color:rgba(255,255,255,0.85)}",
 			".dsa-mode-icon{width:24px;height:24px;color:rgba(255,255,255,0.8)}",
-			".dsa-shape{font-size:11px;min-width:40px;padding:0 6px;color:rgba(255,255,255,0.85)}",
+			".dsa-shape{font-size:11px;font-weight:700;min-width:44px;padding:0 8px;border-radius:9px;color:#1c1200;background:linear-gradient(135deg,#fbbf24,#f97316);box-shadow:0 0 10px rgba(251,146,60,0.55),0 2px 8px rgba(0,0,0,0.3);transition:filter .15s,box-shadow .15s}",
+			".dsa-shape:hover{filter:brightness(1.12);box-shadow:0 0 16px rgba(251,146,60,0.8),0 2px 10px rgba(0,0,0,0.35)}",
 			".dsa-body{padding:2px 12px 12px}",
 			".dsa-controls{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}",
 			".dsa-search{display:flex;gap:6px;margin-top:8px}",
 			".dsa-input{flex:1;min-width:0;background:rgba(255,255,255,0.13);border:1px solid rgba(255,255,255,0.22);border-radius:9px;color:#fff;font-size:12px;padding:5px 9px;outline:none;backdrop-filter:blur(6px)}",
 			".dsa-input:focus{border-color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.17)}",
 			".dsa-input::placeholder{color:rgba(255,255,255,0.5)}",
-			".dsa-go{flex:none;border:none;border-radius:9px;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-size:12px;padding:0 12px;cursor:pointer;font-weight:600}",
-			".dsa-go:hover{filter:brightness(1.08)}",
+			".dsa-go{flex:none;border:none;border-radius:9px;background:transparent;color:#fff;font-size:12px;padding:0 12px;cursor:pointer;font-weight:600}",
+			".dsa-go:hover{background:rgba(255,255,255,0.16)}",
 			".dsa-go:disabled{opacity:0.5;cursor:not-allowed}",
 			".dsa-results{margin-top:6px;max-height:150px;overflow-y:auto}",
 			".dsa-item{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:8px;cursor:pointer}",
@@ -223,8 +224,6 @@ window.__ModuleLoader__.load({
 			pause: "❚❚",
 			prev: "⏮",
 			next: "⏭",
-			volup: "+",
-			voldown: "−",
 			collapse: "—",
 			search: "🔍"
 		};
@@ -763,8 +762,7 @@ window.__ModuleLoader__.load({
 						// 传输控制（含收藏）
 						h("div", { className: "dsa-controls" }, [
 							h("button", { className: "dsa-btn dsa-mode", title: "推荐播放（不知道听什么时用）", disabled: !canControl || busy, onClick: onRecommend }, "推荐"),
-														h("button", { className: "dsa-btn", title: "音量-", disabled: !canControl, onClick: function () { runCommand("volume-down"); } }, ICONS.voldown),
-							h("button", { className: "dsa-btn", title: "上一首", disabled: !canControl, onClick: function () { runCommand("prev"); } }, ICONS.prev),
+														h("button", { className: "dsa-btn", title: "上一首", disabled: !canControl, onClick: function () { runCommand("prev"); } }, ICONS.prev),
 							h("button", {
 								className: "dsa-btn dsa-btn-primary",
 								title: "播放/暂停",
@@ -772,7 +770,6 @@ window.__ModuleLoader__.load({
 								onClick: function () { runCommand("toggle-play"); }
 							}, isPlaying ? ICONS.pause : ICONS.play),
 							h("button", { className: "dsa-btn", title: "下一首", disabled: !canControl, onClick: function () { runCommand("next"); } }, ICONS.next),
-							h("button", { className: "dsa-btn", title: "音量+", disabled: !canControl, onClick: function () { runCommand("volume-up"); } }, ICONS.volup),
 							h("button", {
 								className: "dsa-btn dsa-fav" + ((favOptimistic !== null ? favOptimistic : Boolean(state && state.favorite)) ? " active" : ""),
 								title: "收藏/取消收藏当前歌曲",
