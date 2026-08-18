@@ -483,13 +483,15 @@ window.__ModuleLoader__.load({
 				}).catch(function () { setBusy(false); flash("err", "推荐失败"); });
 			};
 
-			var onSearch = function () {
+			var onSearch = function (forcedType) {
 				var q = query.trim();
 				if (!q) return;
+				// 切换 tab 重搜时显式传 type，避免 setTimeout 闭包捕获旧的 searchType 导致搜错类型
+				var t = typeof forcedType === "number" ? forcedType : searchType;
 				setSearched(true);
 				setSearching(true);
 				setResults(null);
-				searchMusic(q, searchType).then(function (r) {
+				searchMusic(q, t).then(function (r) {
 					setSearching(false);
 					if (!r || r.ok === false) { flash("err", (r && r.error) || "搜索失败"); setResults(null); return; }
 					setResults(r.items || []);
@@ -499,7 +501,7 @@ window.__ModuleLoader__.load({
 			var switchType = function (type) {
 				setSearchType(type);
 				setResults(null);
-				if (query.trim()) setTimeout(onSearch, 0);
+				if (query.trim()) setTimeout(function () { onSearch(type); }, 0);
 			};
 
 			var onPlaySong = function (item) {
