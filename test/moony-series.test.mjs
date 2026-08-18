@@ -63,6 +63,14 @@ test('resolver accepts approved states and trimmed media URLs', () => {
 	assert.equal(value.mediaUrl, 'https://img.test/a.jpg');
 });
 
+test('prototype property pet IDs fall back to Classic', () => {
+	const { getMoony, resolveMoonyState } = loadClient();
+	for (const id of ['constructor', 'toString', '__proto__']) {
+		assert.equal(getMoony(id).id, 'classic');
+		assert.equal(resolveMoonyState({ petId: id }).pet.id, 'classic');
+	}
+});
+
 test('storage keeps valid choices and rejects invalid or unavailable storage', () => {
 	const { readStoredMoonyId, writeStoredMoonyId } = loadClient();
 	const values = new Map();
@@ -91,6 +99,119 @@ function findNodes(root, predicate) {
 	})(root);
 	return found;
 }
+
+function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } = {}) {
+	let definition;
+	let mountedPlayer;
+	let tree;
+	let hookIndex = 0;
+	const hooks = [];
+	const listeners = {};
+	const values = new Map(storedId ? [['dsh-moony-singer:pet-id:v1', storedId]] : []);
+	const storage = {
+		getItem(key) { return values.get(key) ?? null; },
+		setItem(key, value) { values.set(key, value); }
+	};
+	const playerState = {
+		agentStatus: 'review',
+		playing: { isPlaying: true, song: { id: 'song-1', name: 'Paper Moon', artists: 'Ella', albumPic: 'https://img.test/moon.jpg' } }
+	};
+	const rerender = function () {
+		hookIndex = 0;
+		tree = mountedPlayer.type(mountedPlayer.props);
+	};
+	const react = {
+		createElement(type, props, ...children) {
+			return { type, props: { ...(props || {}), children: toChildren(children) } };
+		},
+		useCallback(fn) { hookIndex++; return fn; },
+		useEffect() { hookIndex++; },
+		useRef(value) {
+			const index = hookIndex++;
+			if (!(index in hooks)) hooks[index] = { current: value };
+			return hooks[index];
+		},
+		useState(value) {
+			const index = hookIndex++;
+			if (!(index in hooks)) hooks[index] = index === 0 ? playerState : (typeof value === 'function' ? value() : value);
+			return [hooks[index], (next) => { hooks[index] = typeof next === 'function' ? next(hooks[index]) : next; rerender(); }];
+		}
+	};
+	const document = {
+		body: { appendChild() {} },
+		head: { appendChild() {} },
+		createElement() { return { dataset: {}, parentNode: { removeChild() {} } }; }
+	};
+	const sandbox = {
+		clearInterval() {}, clearTimeout() {}, document,
+		fetch() { throw new Error('effects stay inactive in MusicPlayer integration tests'); },
+		setInterval() { return 1; }, setTimeout() { return 1; },
+		window: {
+			__ModuleLoader__: { load(value) { definition = value; } },
+			addEventListener(name, callback) { listeners[name] = callback; },
+			removeEventListener(name) { delete listeners[name]; },
+			innerHeight: 900, innerWidth: 1440
+		}
+	};
+	if (storageUnavailable) {
+		Object.defineProperty(sandbox, 'localStorage', { get() { throw new Error('storage unavailable'); } });
+		Object.defineProperty(sandbox.window, 'localStorage', { get() { throw new Error('storage unavailable'); } });
+	} else {
+		sandbox.localStorage = storage;
+		sandbox.window.localStorage = storage;
+	}
+	vm.runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox);
+	const client = definition.factory((name) => {
+		if (name === 'react') return react;
+		if (name === 'react-dom') return { render(element) { mountedPlayer = element; rerender(); }, unmountComponentAtNode() {} };
+		throw new Error(`unexpected client dependency: ${name}`);
+	});
+	client.apply({ effect(callback) { callback(); } });
+	return { client, listeners, storage, tree: () => tree };
+}
+
+test('MusicPlayer preserves the selected Moony through the collapsed and expanded player flows', () => {
+	const harness = loadMusicPlayerHarness({ storedId: 'drift' });
+	let pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
+	assert.deepEqual(Array.from(harness.client.inject), ['slots']);
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
+	assert.deepEqual(
+		{ petId: pet.props.petId, agentStatus: pet.props.agentStatus, mediaUrl: pet.props.mediaUrl, isPlaying: pet.props.isPlaying },
+		{ petId: 'drift', agentStatus: 'review', mediaUrl: 'https://img.test/moon.jpg', isPlaying: true }
+	);
+
+	pet.props.onClick({ stopPropagation() {} });
+	let body = findNodes(harness.tree(), (node) => node.props?.className === 'dsa-body')[0];
+	let picker = findNodes(body, (node) => node.type === harness.client.MoonyPicker)[0];
+	assert.equal(picker.props.selectedId, 'drift');
+	const pickerTree = picker.type(picker.props);
+	findNodes(pickerTree, (node) => node.props?.['data-moony-choice'] === 'echo')[0].props.onClick();
+	assert.equal(harness.storage.getItem('dsh-moony-singer:pet-id:v1'), 'echo');
+	body = findNodes(harness.tree(), (node) => node.props?.className === 'dsa-body')[0];
+	picker = findNodes(body, (node) => node.type === harness.client.MoonyPicker)[0];
+	assert.equal(picker.props.selectedId, 'echo');
+
+	findNodes(harness.tree(), (node) => node.type === 'button' && node.props?.title === '收起为宠物 / 展开播放器')[0].props.onClick({ stopPropagation() {} });
+	pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
+	pet.props.onPointerDown({ button: 0, clientX: 10, clientY: 10 });
+	harness.listeners.pointermove({ clientX: 20, clientY: 10 });
+	pet.props.onClick({ stopPropagation() {} });
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
+	pet.props.onClick({ stopPropagation() {} });
+	body = findNodes(harness.tree(), (node) => node.props?.className === 'dsa-body')[0];
+	assert.equal(findNodes(body, (node) => node.type === harness.client.MoonyPicker).length, 1);
+});
+
+test('MusicPlayer keeps character selection usable when acquiring localStorage throws', () => {
+	const harness = loadMusicPlayerHarness({ storageUnavailable: true });
+	const pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
+	assert.equal(pet.props.petId, 'classic');
+	assert.doesNotThrow(() => pet.props.onClick({ stopPropagation() {} }));
+	const picker = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker)[0];
+	const pickerTree = picker.type(picker.props);
+	assert.doesNotThrow(() => findNodes(pickerTree, (node) => node.props?.['data-moony-choice'] === 'hush')[0].props.onClick());
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker)[0].props.selectedId, 'hush');
+});
 
 test('picker exposes seven buttons and selects the clicked character', () => {
 	const { MoonyPicker } = loadClient();

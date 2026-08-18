@@ -46,7 +46,12 @@ window.__ModuleLoader__.load({
 		var MOONY_BY_ID = Object.freeze(MOONY_CATALOG.reduce(function (out, pet) { out[pet.id] = pet; return out; }, {}));
 
 		function getMoony(id) {
-			return typeof id === "string" && MOONY_BY_ID[id] ? MOONY_BY_ID[id] : MOONY_BY_ID.classic;
+			return typeof id === "string" && Object.prototype.hasOwnProperty.call(MOONY_BY_ID, id) ? MOONY_BY_ID[id] : MOONY_BY_ID.classic;
+		}
+
+		function getLocalStorage() {
+			try { return typeof window !== "undefined" ? window.localStorage : null; }
+			catch { return null; }
 		}
 
 		function readStoredMoonyId(storage) {
@@ -401,8 +406,8 @@ window.__ModuleLoader__.load({
 		/* ---------- 浮动播放器 ---------- */
 		function MusicPlayer() {
 			var [state, setState] = React.useState(null);
-			var [petId, setPetId] = React.useState(function () { return readStoredMoonyId(localStorage); });
-			var selectMoony = function (id) { setPetId(writeStoredMoonyId(localStorage, id)); };
+			var [petId, setPetId] = React.useState(function () { return readStoredMoonyId(getLocalStorage()); });
+			var selectMoony = function (id) { setPetId(writeStoredMoonyId(getLocalStorage(), id)); };
 			// 默认宠物形态（收起）：每次打开先看到宠物，点击才切换播放器
 			var [collapsed, setCollapsed] = React.useState(true);
 			var [pos, setPos] = React.useState(null);
