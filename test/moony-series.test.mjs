@@ -62,3 +62,39 @@ test('resolver accepts approved states and trimmed media URLs', () => {
 	assert.equal(value.faceMode, 'media');
 	assert.equal(value.mediaUrl, 'https://img.test/a.jpg');
 });
+
+function flattenChildren(value) {
+	if (Array.isArray(value)) return value.flatMap(flattenChildren);
+	return value === undefined || value === null || value === false ? [] : [value];
+}
+
+function findNodes(root, predicate) {
+	const found = [];
+	(function visit(node) {
+		if (!node || typeof node !== 'object') return;
+		if (predicate(node)) found.push(node);
+		for (const child of flattenChildren(node.props?.children)) visit(child);
+	})(root);
+	return found;
+}
+
+test('idle Classic has a blank face with no image, Emoji, or tail', () => {
+	const { MoonyPet } = loadClient();
+	const tree = MoonyPet({ petId: 'classic', agentStatus: 'idle', mediaUrl: null, isPlaying: false });
+	assert.equal(findNodes(tree, (node) => node.type === 'img').length, 0);
+	assert.equal(findNodes(tree, (node) => String(node.props?.className || '').includes('dsa-pet-emoji')).length, 0);
+	assert.equal(findNodes(tree, (node) => String(node.props?.className || '').includes('dsa-moony-tail')).length, 0);
+	assert.equal(findNodes(tree, (node) => String(node.props?.className || '').includes('dsa-moony-face')).length, 1);
+});
+
+test('Echo renders one tail and media only inside the face layer', () => {
+	const { MoonyPet } = loadClient();
+	const tree = MoonyPet({ petId: 'echo', agentStatus: 'running', mediaUrl: 'https://img.test/singer.jpg', isPlaying: true });
+	const images = findNodes(tree, (node) => node.type === 'img');
+	assert.equal(images.length, 1);
+	assert.equal(images[0].props.src, 'https://img.test/singer.jpg');
+	assert.equal(findNodes(tree, (node) => String(node.props?.className || '').includes('dsa-moony-tail')).length, 1);
+	const target = { hidden: false };
+	images[0].props.onError({ currentTarget: target });
+	assert.equal(target.hidden, true);
+});
