@@ -764,11 +764,10 @@ window.__ModuleLoader__.load({
 					isPlaying
 						? h("div", { className: "dsa-pet-notes" }, [h("span", null, "♪"), h("span", null, "♫"), h("span", null, "♪")])
 						: null,
-					h(MoonyPet, {
-						petId: "classic",
-						agentStatus: state && state.agentStatus,
-						mediaUrl: petImg,
-						isPlaying: isPlaying,
+					h("div", {
+						className: "dsa-pet" +
+							(isPlaying ? " singing" : "") +
+							(state && state.agentStatus && state.agentStatus !== "idle" ? " dsa-agent-" + state.agentStatus : ""),
 						title: "展开播放器",
 						onPointerDown: onDragStart,
 						onClick: function (e) {
@@ -776,7 +775,13 @@ window.__ModuleLoader__.load({
 							if (suppressClickRef.current) { suppressClickRef.current = false; return; }
 							toggleCollapsed();
 						}
-					})
+					}, [
+						h("span", { className: "dsa-pet-ear left" }),
+						h("span", { className: "dsa-pet-ear right" }),
+						petImg
+							? h("img", { className: "dsa-pet-face", src: petImg, alt: "", draggable: false })
+							: h("span", { className: "dsa-pet-emoji" }, "🎵")
+					])
 				]);
 			}
 
