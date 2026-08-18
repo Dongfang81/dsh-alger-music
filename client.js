@@ -26,6 +26,34 @@ window.__ModuleLoader__.load({
 		/** 本地存储键。 */
 		var STORE_X = "dsh-alger:x";
 		var STORE_Y = "dsh-alger:y";
+		var MOONY_STATUS = Object.freeze({
+			idle: Object.freeze({ signal: "transparent" }),
+			running: Object.freeze({ signal: "#3B82F6" }),
+			waiting: Object.freeze({ signal: "#F59E0B" }),
+			failed: Object.freeze({ signal: "#EF4444" }),
+			review: Object.freeze({ signal: "#10B981" })
+		});
+		var MOONY_CATALOG = Object.freeze([
+			Object.freeze({ id: "classic", name: "Moony Classic", role: "初代经典", ear: "classic", tail: "none", colors: Object.freeze({ ear: "#6D5BD0", highlight: "#A99AF2", rim: "#D8D0FF" }) }),
+			Object.freeze({ id: "pulse", name: "Moony · Pulse", role: "节拍追逐者", ear: "pulse", tail: "none", colors: Object.freeze({ ear: "#6944C4", highlight: "#C2A5FF", rim: "#DED1FF" }) }),
+			Object.freeze({ id: "echo", name: "Moony · Echo", role: "回忆共振者", ear: "echo", tail: "orbit", colors: Object.freeze({ ear: "#394B91", highlight: "#8EA8E8", rim: "#B8C8F5" }) }),
+			Object.freeze({ id: "drift", name: "Moony · Drift", role: "沉浸漂流者", ear: "drift", tail: "comet", colors: Object.freeze({ ear: "#6799A2", highlight: "#B9E0E2", rim: "#D5F2F1" }) }),
+			Object.freeze({ id: "spark", name: "Moony · Spark", role: "新声探索者", ear: "spark", tail: "none", colors: Object.freeze({ ear: "#C88322", highlight: "#F2D16D", rim: "#FFE4A3" }) }),
+			Object.freeze({ id: "chorus", name: "Moony · Chorus", role: "跟唱共鸣者", ear: "chorus", tail: "curl", colors: Object.freeze({ ear: "#B85388", highlight: "#F3A6C7", rim: "#FFD0E3" }) }),
+			Object.freeze({ id: "hush", name: "Moony · Hush", role: "安静陪伴者", ear: "hush", tail: "none", colors: Object.freeze({ ear: "#647654", highlight: "#B9C5A6", rim: "#DBE3CE" }) })
+		]);
+		var MOONY_BY_ID = Object.freeze(MOONY_CATALOG.reduce(function (out, pet) { out[pet.id] = pet; return out; }, {}));
+
+		function getMoony(id) {
+			return typeof id === "string" && MOONY_BY_ID[id] ? MOONY_BY_ID[id] : MOONY_BY_ID.classic;
+		}
+
+		function resolveMoonyState(input) {
+			var value = input && typeof input === "object" ? input : {};
+			var status = typeof value.agentStatus === "string" && MOONY_STATUS[value.agentStatus] ? value.agentStatus : "idle";
+			var mediaUrl = typeof value.mediaUrl === "string" && value.mediaUrl.trim() ? value.mediaUrl.trim() : null;
+			return { pet: getMoony(value.petId), status: status, faceMode: mediaUrl ? "media" : "blank", mediaUrl: mediaUrl };
+		}
 
 		/* ---------- API ---------- */
 		function getState() {
@@ -921,6 +949,10 @@ window.__ModuleLoader__.load({
 		exports.inject = inject;
 		exports.name = "dsh-moony-singer";
 		exports.parseLrc = parseLrc;
+		exports.MOONY_CATALOG = MOONY_CATALOG;
+		exports.MOONY_STATUS = MOONY_STATUS;
+		exports.getMoony = getMoony;
+		exports.resolveMoonyState = resolveMoonyState;
 		return module.exports;
 	}
 });
