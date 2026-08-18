@@ -348,3 +348,11 @@ test('running reversal only targets the Moony right ear', () => {
 	assert.match(MOONY_CSS, /\.dsa-agent-running \.dsa-moony-ear\.right\{animation-direction:alternate-reverse/);
 	assert.doesNotMatch(MOONY_CSS, /\.dsa-agent-running \.right\{/);
 });
+
+test('standalone gallery loads the real client entry instead of copying character definitions', () => {
+	const html = readFileSync(new URL('../demo/moony-gallery.html', import.meta.url), 'utf8');
+	assert.match(html, /<script src="\.\.\/client\.js"><\/script>/);
+	assert.match(html, /MOONY_CATALOG/);
+	assert.match(html, /MoonyPet/);
+	assert.doesNotMatch(html, /id:\s*["']pulse["']/);
+});

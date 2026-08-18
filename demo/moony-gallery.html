@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moony First Wave Gallery</title>
+<style>
+html,body{margin:0;min-height:100%;background:linear-gradient(145deg,#0d0b14,#181126);color:#fff;font-family:system-ui,-apple-system,"PingFang SC",sans-serif}main{max-width:1080px;margin:auto;padding:40px 28px}.gallery{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.tile{min-height:220px;display:grid;place-items:center;padding:24px 12px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:rgba(255,255,255,.05)}.pet-slot{width:96px;height:96px;display:grid;place-items:center}.pet-slot.small{transform:scale(.625);height:62px}.tile h2{margin:10px 0 2px;font-size:15px}.tile p{margin:0;color:rgba(255,255,255,.6);font-size:11px;text-align:center}@media(max-width:780px){.gallery{grid-template-columns:repeat(2,1fr)}}
+</style>
+<script>
+function domElement(type, props, ...children) {
+  if (typeof type === 'function') return type(props || {});
+  const node = document.createElement(type); const input = props || {};
+  for (const [key, value] of Object.entries(input)) {
+    if (key === 'children' || key === 'key' || value == null) continue;
+    if (key === 'className') node.className = value;
+    else if (key === 'style') {
+      for (const [styleKey, styleValue] of Object.entries(value)) {
+        if (styleKey.startsWith('--')) node.style.setProperty(styleKey, styleValue);
+        else node.style[styleKey] = styleValue;
+      }
+    }
+    else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
+    else if (key === 'draggable') node.draggable = value;
+    else node.setAttribute(key, String(value));
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child == null || child === false) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+window.__ModuleLoader__ = { load(definition) {
+  window.moonyClient = definition.factory((name) => {
+    if (name === 'react') return { createElement: domElement };
+    if (name === 'react-dom') return { render() {}, unmountComponentAtNode() {} };
+    throw new Error('unexpected dependency: ' + name);
+  });
+} };
+</script>
+<script src="../client.js"></script>
+</head>
+<body>
+<main><h1>Moony Classic + First Wave</h1><p>空白月面 · 月化耳朵 · 2.5D 软胶</p><section class="gallery" id="gallery"></section></main>
+<script>
+const style = document.createElement('style'); style.textContent = window.moonyClient.MOONY_CSS; document.head.appendChild(style);
+for (const pet of window.moonyClient.MOONY_CATALOG) {
+  const tile = document.createElement('article'); tile.className = 'tile';
+  const normal = document.createElement('div'); normal.className = 'pet-slot';
+  normal.append(window.moonyClient.MoonyPet({ petId: pet.id, agentStatus: 'idle', mediaUrl: null, isPlaying: false }));
+  const small = document.createElement('div'); small.className = 'pet-slot small';
+  small.append(window.moonyClient.MoonyPet({ petId: pet.id, agentStatus: 'review', mediaUrl: null, isPlaying: false }));
+  tile.append(normal, small);
+  const name = document.createElement('h2'); name.textContent = pet.name;
+  const role = document.createElement('p'); role.textContent = pet.role;
+  tile.append(name, role); document.querySelector('#gallery').append(tile);
+}
+</script>
+</body></html>
