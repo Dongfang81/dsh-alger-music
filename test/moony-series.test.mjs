@@ -98,3 +98,30 @@ test('Echo renders one tail and media only inside the face layer', () => {
 	images[0].props.onError({ currentTarget: target });
 	assert.equal(target.hidden, true);
 });
+
+test('Moony CSS defines every skin, tail, signal, and reduced-motion fallback', () => {
+	const { MOONY_CSS } = loadClient();
+	for (const ear of ['classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush']) {
+		assert.match(MOONY_CSS, new RegExp(`data-moony-ear=["']${ear}["']`));
+	}
+	for (const tail of ['orbit', 'comet', 'curl']) {
+		assert.match(MOONY_CSS, new RegExp(`data-moony-tail=["']${tail}["']`));
+	}
+	assert.match(MOONY_CSS, /--moony-signal/);
+	assert.match(MOONY_CSS, /prefers-reduced-motion:\s*reduce/);
+	assert.match(MOONY_CSS, /dsa-agent-running \.dsa-moony-tail/);
+	assert.match(MOONY_CSS, /dsa-agent-failed \.dsa-moony-tail/);
+	assert.doesNotMatch(MOONY_CSS, /dsa-agent-running[^}]*background:/);
+});
+
+test('Moony signal states glow at the ear outline without replacing base ear color', () => {
+	const { MOONY_CSS } = loadClient();
+	for (const state of ['running', 'waiting', 'failed', 'review']) {
+		assert.match(MOONY_CSS, new RegExp(`dsa-agent-${state} \\.dsa-moony-ear`));
+		assert.doesNotMatch(MOONY_CSS, new RegExp(`dsa-agent-${state}[^}]*background:`));
+	}
+	assert.match(MOONY_CSS, /border-color:var\(--moony-signal\)/);
+	assert.match(MOONY_CSS, /drop-shadow\(0 0 5px var\(--moony-signal\)\)/);
+	assert.match(MOONY_CSS, /dsa-agent-failed \.dsa-moony-ear\{[^}]*animation:dsa-moony-failed \.24s linear 3/);
+	assert.doesNotMatch(MOONY_CSS, /@keyframes dsa-moony-(?:running|waiting|failed|review)[^{]*\{[^}]*transform:/);
+});

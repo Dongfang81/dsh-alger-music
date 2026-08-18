@@ -133,6 +133,32 @@ window.__ModuleLoader__.load({
 		}
 
 		/* ---------- 样式 ---------- */
+		var MOONY_CSS = [
+			".dsa-pet{position:relative;width:64px;height:64px;cursor:grab;overflow:visible;user-select:none}",
+			".dsa-pet:active{cursor:grabbing}.dsa-moony-rhythm{position:absolute;inset:0;display:block}",
+			".dsa-pet.singing .dsa-moony-rhythm{animation:dsa-moony-rhythm .55s ease-in-out infinite alternate}",
+			".dsa-moony-face{position:absolute;inset:0;z-index:3;display:block;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,.9);background:linear-gradient(145deg,#f5f2f8 4%,#d6cfdf 58%,#aaa1b9);box-shadow:inset 4px 5px 8px rgba(255,255,255,.58),inset -6px -7px 11px rgba(55,40,76,.14),0 8px 18px rgba(0,0,0,.34)}",
+			".dsa-moony-face img{width:100%;height:100%;display:block;object-fit:cover}",
+			".dsa-moony-ear{position:absolute;z-index:1;display:block;background:linear-gradient(145deg,var(--moony-ear-highlight),var(--moony-ear));border:3px solid var(--moony-rim);box-shadow:inset 3px 3px 6px rgba(255,255,255,.2),inset -4px -5px 7px rgba(30,18,60,.18),0 5px 9px rgba(0,0,0,.2);transform-origin:50% 90%}",
+			".dsa-moony-ear::before{content:'';position:absolute;inset:7px;border:1px solid rgba(255,255,255,.18);border-radius:inherit}",
+			".dsa-moony-signal{position:absolute;right:6px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--moony-signal);box-shadow:0 0 8px var(--moony-signal)}",
+			".dsa-moony-pet[data-moony-ear='classic'] .dsa-moony-ear{top:-8px;width:22px;height:22px;border-radius:55% 45% 25% 30%}.dsa-moony-pet[data-moony-ear='classic'] .left{left:3px}.dsa-moony-pet[data-moony-ear='classic'] .right{right:3px}",
+			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-ear{top:-23px;width:27px;height:48px;border-radius:59% 41% 20% 30%;clip-path:polygon(0 0,100% 8%,72% 100%,48% 66%,25% 100%)}.dsa-moony-pet[data-moony-ear='pulse'] .left{left:1px;transform:rotate(-12deg)}.dsa-moony-pet[data-moony-ear='pulse'] .right{right:1px;transform:scaleX(-1) rotate(-12deg)}",
+			".dsa-moony-pet[data-moony-ear='echo'] .dsa-moony-ear{top:-12px;width:39px;height:34px;border-radius:65% 35% 58% 42%;clip-path:polygon(0 14%,100% 0,72% 100%,18% 82%)}.dsa-moony-pet[data-moony-ear='echo'] .left{left:-9px;transform:rotate(-18deg)}.dsa-moony-pet[data-moony-ear='echo'] .right{right:-9px;transform:scaleX(-1) rotate(-18deg)}",
+			".dsa-moony-pet[data-moony-ear='drift'] .dsa-moony-ear{top:-8px;width:24px;height:54px;border-radius:55% 45% 68% 32%}.dsa-moony-pet[data-moony-ear='drift'] .left{left:-4px;transform:rotate(26deg)}.dsa-moony-pet[data-moony-ear='drift'] .right{right:-4px;transform:rotate(-26deg)}",
+			".dsa-moony-pet[data-moony-ear='spark'] .left{left:5px;top:-27px;width:19px;height:50px;border-radius:60% 40% 18% 28%;transform:rotate(-23deg)}.dsa-moony-pet[data-moony-ear='spark'] .right{right:-7px;top:-8px;width:37px;height:29px;border-radius:70% 30% 55% 45%;transform:rotate(8deg)}",
+			".dsa-moony-pet[data-moony-ear='chorus'] .dsa-moony-ear{top:-18px;width:39px;height:40px;clip-path:polygon(50% 0,65% 39%,100% 20%,76% 60%,98% 84%,56% 75%,40% 100%,29% 68%,0 75%,25% 47%)}.dsa-moony-pet[data-moony-ear='chorus'] .left{left:-7px;transform:rotate(-9deg)}.dsa-moony-pet[data-moony-ear='chorus'] .right{right:-7px;transform:scaleX(-1) rotate(-9deg)}",
+			".dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-ear{top:-2px;width:37px;height:32px;border-radius:70% 30% 62% 38%;clip-path:polygon(0 10%,100% 0,78% 100%,18% 85%)}.dsa-moony-pet[data-moony-ear='hush'] .left{left:-9px;transform:rotate(-22deg)}.dsa-moony-pet[data-moony-ear='hush'] .right{right:-9px;transform:scaleX(-1) rotate(-22deg)}",
+			".dsa-moony-tail{position:absolute;z-index:2;pointer-events:none}.dsa-moony-tail[data-moony-tail='orbit']{right:-8px;bottom:-5px;width:38px;height:32px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(25deg)}",
+			".dsa-moony-tail[data-moony-tail='comet']{right:-12px;bottom:5px;width:38px;height:17px;border-radius:70% 30% 70% 30%;background:linear-gradient(90deg,var(--moony-ear-highlight),transparent);transform:rotate(24deg)}",
+			".dsa-moony-tail[data-moony-tail='curl']{right:-7px;bottom:-6px;width:31px;height:31px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(12deg)}",
+			".dsa-agent-running .dsa-moony-ear,.dsa-agent-waiting .dsa-moony-ear,.dsa-agent-failed .dsa-moony-ear,.dsa-agent-review .dsa-moony-ear{border-color:var(--moony-signal);filter:drop-shadow(0 0 5px var(--moony-signal))}",
+			".dsa-agent-running .dsa-moony-ear{animation:dsa-moony-running .52s ease-in-out infinite alternate}.dsa-agent-running .right{animation-direction:alternate-reverse}.dsa-agent-waiting .dsa-moony-ear{animation:dsa-moony-waiting 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-ear{animation:dsa-moony-failed .24s linear 3}.dsa-agent-review .dsa-moony-ear{animation:dsa-moony-review 1s ease-in-out infinite alternate}",
+			".dsa-agent-running .dsa-moony-tail{animation:dsa-moony-tail-sway .52s ease-in-out infinite alternate}.dsa-agent-waiting .dsa-moony-tail{animation:dsa-moony-tail-listen 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-tail{animation:dsa-moony-tail-failed .24s linear 3}.dsa-agent-review .dsa-moony-tail{animation:dsa-moony-tail-review 1s ease-in-out infinite alternate}",
+			"@keyframes dsa-moony-rhythm{from{translate:0 0}to{translate:0 -4px}}@keyframes dsa-moony-running{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-waiting{0%,100%{translate:-1px 0}50%{translate:2px 1px}}@keyframes dsa-moony-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-review{from{translate:0 0}to{translate:0 -3px}}",
+			"@keyframes dsa-moony-tail-sway{from{rotate:-5deg}to{rotate:7deg}}@keyframes dsa-moony-tail-listen{0%,100%{translate:0 0}50%{translate:0 -2px}}@keyframes dsa-moony-tail-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-tail-review{from{translate:0 0}to{translate:0 -2px}}",
+			"@media (prefers-reduced-motion:reduce){.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-tail{animation:none!important}}"
+		].join("\n");
 		var CSS = [
 			"#dsh-alger-root{position:fixed;left:0;top:0;z-index:2147483000;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;user-select:none;color:#fff}",
 			".dsa-card{width:" + WIDTH + "px;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.03)),rgba(13,15,24,0.66);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);border:1px solid rgba(255,255,255,0.16);box-shadow:0 14px 40px rgba(0,0,0,0.42),inset 0 1px 0 rgba(255,255,255,0.16)}",
@@ -235,38 +261,13 @@ window.__ModuleLoader__.load({
 			".dsa-pet-bubble-tail{position:absolute;top:50%;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;transform:translateY(-50%)}",
 			".dsa-pet-bubble-pos.right .dsa-pet-bubble-tail{left:-7px;border-right:7px solid rgba(13,15,24,0.9)}",
 			".dsa-pet-bubble-pos.left .dsa-pet-bubble-tail{right:-7px;border-left:7px solid rgba(13,15,24,0.9)}",
-			".dsa-pet{position:relative;width:64px;height:64px;border-radius:50%;cursor:grab;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);box-shadow:0 8px 26px rgba(0,0,0,0.45);overflow:visible}",
-			".dsa-pet:active{cursor:grabbing}",
-			".dsa-pet.singing{animation:dsa-pet-bob .55s ease-in-out infinite alternate}",
-			/* agent 状态：耳朵变色 + 动效（Codex Pets 式，宠物反映 DSH 在做啥） */
-			".dsa-pet.dsa-agent-running .dsa-pet-ear{background:linear-gradient(135deg,#60a5fa,#2563eb);animation:dsa-ear-wiggle .5s ease-in-out infinite alternate}",
-			".dsa-pet.dsa-agent-waiting .dsa-pet-ear{background:linear-gradient(135deg,#fbbf24,#d97706);animation:dsa-ear-tilt 1.6s ease-in-out infinite}",
-			".dsa-pet.dsa-agent-failed .dsa-pet-ear{background:linear-gradient(135deg,#f87171,#dc2626);animation:dsa-ear-shake .3s linear infinite}",
-			".dsa-pet.dsa-agent-review .dsa-pet-ear{background:linear-gradient(135deg,#6ee7b7,#10b981);animation:dsa-ear-bob 1s ease-in-out infinite alternate}",
-			".dsa-pet-face{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}",
-			".dsa-pet-emoji{font-size:28px}",
-			".dsa-moony-rhythm{position:relative;display:block;width:100%;height:100%;border-radius:50%}",
-			".dsa-moony-face{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.2),transparent 36%),linear-gradient(135deg,var(--moony-rim),var(--moony-ear));overflow:hidden}",
-			".dsa-moony-face img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}",
-			".dsa-moony-ear{position:absolute;z-index:2;top:-9px;width:18px;height:18px;border-radius:50% 50% 0 0;background:linear-gradient(135deg,var(--moony-ear-highlight),var(--moony-ear));border:2px solid var(--moony-rim);border-bottom:none;transform-origin:50% 100%}",
-			".dsa-moony-ear.left{left:3px}.dsa-moony-ear.right{right:3px}",
-			".dsa-moony-signal{position:absolute;right:1px;top:1px;width:5px;height:5px;border-radius:50%;background:var(--moony-signal);box-shadow:0 0 5px var(--moony-signal)}",
-			".dsa-moony-tail{position:absolute;z-index:1;right:-12px;bottom:2px;width:18px;height:18px;border:3px solid var(--moony-ear);border-left-color:transparent;border-radius:50%}",
-			".dsa-pet-ear{position:absolute;top:-9px;width:18px;height:18px;border-radius:50% 50% 0 0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);border-bottom:none;transform-origin:50% 100%}",
-			".dsa-pet-ear.left{left:3px}",
-			".dsa-pet-ear.right{right:3px}",
-			"@keyframes dsa-ear-wiggle{from{transform:rotate(-7deg)}to{transform:rotate(7deg)}}",
-			"@keyframes dsa-ear-tilt{0%,100%{transform:translateX(-2px)}50%{transform:translateX(2px)}}",
-			"@keyframes dsa-ear-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}",
-			"@keyframes dsa-ear-bob{from{transform:translateY(0)}to{transform:translateY(-3px)}}",
 			".dsa-pet-notes{position:absolute;top:-24px;right:-10px;display:flex;gap:2px;font-size:14px;color:#fbbf24;pointer-events:none;text-shadow:0 1px 4px rgba(0,0,0,0.5)}",
 			".dsa-pet-notes span{animation:dsa-note-float 1.3s ease-in-out infinite}",
 			".dsa-pet-notes span:nth-child(2){animation-delay:.35s}",
 			".dsa-pet-notes span:nth-child(3){animation-delay:.7s}",
-			"@keyframes dsa-pet-bob{from{transform:translateY(0)}to{transform:translateY(-6px)}}",
 			"@keyframes dsa-bubble-bob{from{transform:translateY(0)}to{transform:translateY(-2px)}}",
 			"@keyframes dsa-note-float{0%{transform:translateY(0);opacity:0}30%{opacity:1}100%{transform:translateY(-14px);opacity:0}}"
-		].join("\n");
+		].concat(MOONY_CSS).join("\n");
 
 		function injectCss() {
 			var tag = document.createElement("style");
@@ -974,6 +975,7 @@ window.__ModuleLoader__.load({
 		exports.inject = inject;
 		exports.name = "dsh-moony-singer";
 		exports.parseLrc = parseLrc;
+		exports.MOONY_CSS = MOONY_CSS;
 		exports.MOONY_CATALOG = MOONY_CATALOG;
 		exports.MOONY_STATUS = MOONY_STATUS;
 		exports.getMoony = getMoony;
