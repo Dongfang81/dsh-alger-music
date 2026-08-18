@@ -125,3 +125,24 @@ test('Moony signal states glow at the ear outline without replacing base ear col
 	assert.match(MOONY_CSS, /dsa-agent-failed \.dsa-moony-ear\{[^}]*animation:dsa-moony-failed \.24s linear 3/);
 	assert.doesNotMatch(MOONY_CSS, /@keyframes dsa-moony-(?:running|waiting|failed|review)[^{]*\{[^}]*transform:/);
 });
+
+test('Hush exposes its complete signal above the media face without raising ears over it', () => {
+	const { MOONY_CSS } = loadClient();
+	const hushRule = MOONY_CSS.match(/data-moony-ear='hush'\] \.dsa-moony-ear\{([^}]*)\}/)?.[1];
+	const earRule = MOONY_CSS.match(/\.dsa-moony-ear\{([^}]*)\}/)?.[1];
+	const faceRule = MOONY_CSS.match(/\.dsa-moony-face\{([^}]*)\}/)?.[1];
+	const signalRule = MOONY_CSS.match(/\.dsa-moony-signal\{([^}]*)\}/)?.[1];
+	assert.ok(hushRule && earRule && faceRule && signalRule);
+	const hushTop = Number(hushRule.match(/top:(-\d+)px/)?.[1]);
+	const signalTop = Number(signalRule.match(/top:(\d+)px/)?.[1]);
+	const signalHeight = Number(signalRule.match(/height:(\d+)px/)?.[1]);
+	assert.ok(-hushTop >= signalTop + signalHeight, 'Hush must expose the full ear signal above the face');
+	assert.match(earRule, /z-index:1/);
+	assert.match(faceRule, /z-index:3/);
+});
+
+test('running reversal only targets the Moony right ear', () => {
+	const { MOONY_CSS } = loadClient();
+	assert.match(MOONY_CSS, /\.dsa-agent-running \.dsa-moony-ear\.right\{animation-direction:alternate-reverse/);
+	assert.doesNotMatch(MOONY_CSS, /\.dsa-agent-running \.right\{/);
+});
