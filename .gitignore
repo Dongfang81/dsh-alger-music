@@ -4,3 +4,4 @@ node_modules/
 
 # 本地工具产物（brainstorm 等）
 .superpowers/
+docs/superpowers/
