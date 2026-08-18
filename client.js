@@ -26,6 +26,7 @@ window.__ModuleLoader__.load({
 		/** 本地存储键。 */
 		var STORE_X = "dsh-alger:x";
 		var STORE_Y = "dsh-alger:y";
+		var STORE_MOONY_ID = "dsh-moony-singer:pet-id:v1";
 		var MOONY_STATUS = Object.freeze({
 			idle: Object.freeze({ signal: "transparent" }),
 			running: Object.freeze({ signal: "#3B82F6" }),
@@ -46,6 +47,26 @@ window.__ModuleLoader__.load({
 
 		function getMoony(id) {
 			return typeof id === "string" && MOONY_BY_ID[id] ? MOONY_BY_ID[id] : MOONY_BY_ID.classic;
+		}
+
+		function readStoredMoonyId(storage) {
+			try { return getMoony(storage && storage.getItem(STORE_MOONY_ID)).id; }
+			catch { return "classic"; }
+		}
+
+		function writeStoredMoonyId(storage, id) {
+			var safeId = getMoony(id).id;
+			try { if (storage) storage.setItem(STORE_MOONY_ID, safeId); } catch { /* memory state remains usable */ }
+			return safeId;
+		}
+
+		function MoonyPicker(props) {
+			var selectedId = getMoony(props && props.selectedId).id;
+			var onSelect = props && typeof props.onSelect === "function" ? props.onSelect : function () {};
+			return h("div", { className: "dsa-moony-picker", role: "group", "aria-label": "选择 Moony" }, MOONY_CATALOG.map(function (pet) {
+				var selected = pet.id === selectedId;
+				return h("button", { key: pet.id, type: "button", className: "dsa-moony-choice" + (selected ? " on" : ""), "data-moony-choice": pet.id, "aria-pressed": selected, title: pet.name + " · " + pet.role, onClick: function () { onSelect(pet.id); } }, pet.id === "classic" ? "Classic" : pet.name.split("·").pop().trim());
+			}));
 		}
 
 		function resolveMoonyState(input) {
@@ -135,6 +156,9 @@ window.__ModuleLoader__.load({
 		/* ---------- 样式 ---------- */
 		var MOONY_CSS = [
 			".dsa-pet{position:relative;width:64px;height:64px;cursor:grab;overflow:visible;user-select:none}",
+			".dsa-moony-picker-row{margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.1)}.dsa-moony-picker-label{display:block;margin-bottom:5px;font-size:10px;color:rgba(255,255,255,.55)}",
+			".dsa-moony-picker{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px}.dsa-moony-choice{flex:none;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(255,255,255,.05);color:rgba(255,255,255,.72);padding:3px 8px;font:10px/16px system-ui;cursor:pointer}",
+			".dsa-moony-choice:hover{background:rgba(255,255,255,.11)}.dsa-moony-choice.on{border-color:var(--dsw-alias-accent-6,#8b5cf6);background:rgba(139,92,246,.2);color:#fff}",
 			".dsa-pet:active{cursor:grabbing}.dsa-moony-rhythm{position:absolute;inset:0;display:block}",
 			".dsa-pet.singing .dsa-moony-rhythm{animation:dsa-moony-rhythm .55s ease-in-out infinite alternate}",
 			".dsa-moony-face{position:absolute;inset:0;z-index:3;display:block;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,.9);background:linear-gradient(145deg,#f5f2f8 4%,#d6cfdf 58%,#aaa1b9);box-shadow:inset 4px 5px 8px rgba(255,255,255,.58),inset -6px -7px 11px rgba(55,40,76,.14),0 8px 18px rgba(0,0,0,.34)}",
@@ -377,6 +401,8 @@ window.__ModuleLoader__.load({
 		/* ---------- 浮动播放器 ---------- */
 		function MusicPlayer() {
 			var [state, setState] = React.useState(null);
+			var [petId, setPetId] = React.useState(function () { return readStoredMoonyId(localStorage); });
+			var selectMoony = function (id) { setPetId(writeStoredMoonyId(localStorage, id)); };
 			// 默认宠物形态（收起）：每次打开先看到宠物，点击才切换播放器
 			var [collapsed, setCollapsed] = React.useState(true);
 			var [pos, setPos] = React.useState(null);
@@ -765,24 +791,15 @@ window.__ModuleLoader__.load({
 					isPlaying
 						? h("div", { className: "dsa-pet-notes" }, [h("span", null, "♪"), h("span", null, "♫"), h("span", null, "♪")])
 						: null,
-					h("div", {
-						className: "dsa-pet" +
-							(isPlaying ? " singing" : "") +
-							(state && state.agentStatus && state.agentStatus !== "idle" ? " dsa-agent-" + state.agentStatus : ""),
-						title: "展开播放器",
-						onPointerDown: onDragStart,
-						onClick: function (e) {
-							e.stopPropagation();
+					h(MoonyPet, {
+						petId: petId, agentStatus: state && state.agentStatus, mediaUrl: petImg, isPlaying: isPlaying,
+						title: getMoony(petId).name + " · 展开播放器", onPointerDown: onDragStart,
+						onClick: function (event) {
+							event.stopPropagation();
 							if (suppressClickRef.current) { suppressClickRef.current = false; return; }
 							toggleCollapsed();
 						}
-					}, [
-						h("span", { className: "dsa-pet-ear left" }),
-						h("span", { className: "dsa-pet-ear right" }),
-						petImg
-							? h("img", { className: "dsa-pet-face", src: petImg, alt: "", draggable: false })
-							: h("span", { className: "dsa-pet-emoji" }, "🎵")
-					])
+					})
 				]);
 			}
 
@@ -822,6 +839,10 @@ window.__ModuleLoader__.load({
 					]),
 					// 主体
 					h("div", { className: "dsa-body" }, [
+						h("div", { className: "dsa-moony-picker-row" }, [
+							h("span", { className: "dsa-moony-picker-label" }, "Moony"),
+							h(MoonyPicker, { selectedId: petId, onSelect: selectMoony })
+						]),
 						// 传输控制（含收藏）
 						h("div", { className: "dsa-controls" }, [
 							h("button", { className: "dsa-btn dsa-mode", title: "推荐播放（不知道听什么时用）", disabled: !canControl || busy, onClick: onRecommend }, "推荐"),
@@ -979,8 +1000,11 @@ window.__ModuleLoader__.load({
 		exports.MOONY_CATALOG = MOONY_CATALOG;
 		exports.MOONY_STATUS = MOONY_STATUS;
 		exports.getMoony = getMoony;
+		exports.readStoredMoonyId = readStoredMoonyId;
+		exports.writeStoredMoonyId = writeStoredMoonyId;
 		exports.resolveMoonyState = resolveMoonyState;
 		exports.MoonyPet = MoonyPet;
+		exports.MoonyPicker = MoonyPicker;
 		return module.exports;
 	}
 });

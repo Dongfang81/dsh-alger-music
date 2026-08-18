@@ -63,6 +63,20 @@ test('resolver accepts approved states and trimmed media URLs', () => {
 	assert.equal(value.mediaUrl, 'https://img.test/a.jpg');
 });
 
+test('storage keeps valid choices and rejects invalid or unavailable storage', () => {
+	const { readStoredMoonyId, writeStoredMoonyId } = loadClient();
+	const values = new Map();
+	const storage = { getItem(key) { return values.get(key) ?? null; }, setItem(key, value) { values.set(key, value); } };
+	assert.equal(readStoredMoonyId(storage), 'classic');
+	assert.equal(writeStoredMoonyId(storage, 'drift'), 'drift');
+	assert.equal(readStoredMoonyId(storage), 'drift');
+	values.set('dsh-moony-singer:pet-id:v1', 'not-a-pet');
+	assert.equal(readStoredMoonyId(storage), 'classic');
+	const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+	assert.equal(readStoredMoonyId(blocked), 'classic');
+	assert.equal(writeStoredMoonyId(blocked, 'echo'), 'echo');
+});
+
 function flattenChildren(value) {
 	if (Array.isArray(value)) return value.flatMap(flattenChildren);
 	return value === undefined || value === null || value === false ? [] : [value];
@@ -77,6 +91,17 @@ function findNodes(root, predicate) {
 	})(root);
 	return found;
 }
+
+test('picker exposes seven buttons and selects the clicked character', () => {
+	const { MoonyPicker } = loadClient();
+	let selected = null;
+	const tree = MoonyPicker({ selectedId: 'classic', onSelect(id) { selected = id; } });
+	const buttons = findNodes(tree, (node) => node.type === 'button');
+	assert.equal(buttons.length, 7);
+	assert.equal(buttons[0].props['aria-pressed'], true);
+	buttons.find((button) => button.props['data-moony-choice'] === 'chorus').props.onClick();
+	assert.equal(selected, 'chorus');
+});
 
 test('idle Classic has a blank face with no image, Emoji, or tail', () => {
 	const { MoonyPet } = loadClient();
