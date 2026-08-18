@@ -239,8 +239,8 @@ function buildActions(cfg, client, shared) {
 				return { ok: false, steps: [...steps, `CDP 执行失败: ${error.message}`], guidance: '可尝试 alger_setup action=relaunch 后重试。' };
 			}
 			steps.push(...(out?.steps || []));
-			if (!out?.ok) return { ok: false, steps, guidance: out?.error || '随机推荐播放失败' };
-			shared.setNotice('🎲 随机播放：' + song.name);
+			if (!out?.ok) return { ok: false, steps, guidance: out?.error || '推荐播放失败' };
+			shared.setNotice('🎵 推荐播放：' + song.name);
 			return { ok: true, steps, playedName: song.name, playedId: song.id };
 		},
 
@@ -1017,14 +1017,14 @@ function buildTools(cfg, actions) {
 	const recommend = {
 		name: 'alger_recommend',
 		description:
-			'随机推荐播放：不知道听什么时，从 App 音乐 API 的推荐/热门歌曲中随机挑一首立即播放（走 CDP，与 alger_play 同路径）。',
+			'推荐播放：不知道听什么时，从 App 音乐 API 的推荐/热门歌曲中随机挑一首立即播放（走 CDP，与 alger_play 同路径）。',
 		parameters: compileParameters({}),
 		output: {
 			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
 			render: (_args, value) => {
 				const rec = asRecord(value);
 				const lines = (rec.steps || []).map((s) => '· ' + s);
-				if (rec.ok) lines.push('🎲 随机播放：' + (rec.playedName || ''));
+				if (rec.ok) lines.push('🎵 推荐播放：' + (rec.playedName || ''));
 				if (rec.guidance) lines.push('提示: ' + rec.guidance);
 				return lines;
 			}

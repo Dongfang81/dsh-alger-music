@@ -100,6 +100,8 @@ window.__ModuleLoader__.load({
 			".dsa-btn-primary{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,rgba(255,255,255,0.95),rgba(255,255,255,0.72));color:#11131f;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,0.35)}",
 			".dsa-btn-primary:hover{filter:brightness(1.05)}",
 			".dsa-mode{font-size:10px;min-width:32px;padding:0 3px;color:rgba(255,255,255,0.85)}",
+			".dsa-mode-icon{width:24px;height:24px;color:rgba(255,255,255,0.8)}",
+			".dsa-shape{font-size:11px;min-width:40px;padding:0 6px;color:rgba(255,255,255,0.85)}",
 			".dsa-body{padding:2px 12px 12px}",
 			".dsa-controls{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}",
 			".dsa-search{display:flex;gap:6px;margin-top:8px}",
@@ -226,6 +228,31 @@ window.__ModuleLoader__.load({
 			collapse: "—",
 			search: "🔍"
 		};
+
+		// 播放模式图标（0=列表循环 / 1=单曲循环 / 2=随机），通用描边 SVG，三态切换
+		var MODE_ICON_PATHS = [
+			// 列表循环
+			["M17 1l4 4-4 4", "M3 11V9a4 4 0 0 1 4-4h14", "M7 23l-4-4 4-4", "M21 13v2a4 4 0 0 1-4 4H3"],
+			// 单曲循环（带 1）
+			["M17 1l4 4-4 4", "M3 11V9a4 4 0 0 1 4-4h14", "M7 23l-4-4 4-4", "M21 13v2a4 4 0 0 1-4 4H3", "M11 10l1-1v4"],
+			// 随机（交叉箭头）
+			["M16 3h5v5", "M4 20L21 3", "M21 16v5h-5", "M15 15l6 6", "M4 4l5 5"]
+		];
+		function PlayModeIcon(props) {
+			var paths = MODE_ICON_PATHS[(props && props.mode ? props.mode : 0) % 3];
+			return h("svg", {
+				width: 15,
+				height: 15,
+				viewBox: "0 0 24 24",
+				fill: "none",
+				stroke: "currentColor",
+				strokeWidth: 2,
+				strokeLinecap: "round",
+				strokeLinejoin: "round"
+			}, paths.map(function (d, i) {
+				return h("path", { key: i, d: d });
+			}));
+		}
 
 		function readyDot(state) {
 			if (!state) return "wait";
@@ -440,16 +467,16 @@ window.__ModuleLoader__.load({
 				refresh();
 			};
 
-			// 随机推荐播放：不知道听什么时一键随机
+			// 推荐播放：不知道听什么时一键推荐
 			var onRecommend = function () {
 				if (!state || !state.remoteUp) { flash("err", "远程控制未就绪，请先点“连接”"); return; }
 				setBusy(true);
 				post("/dsh-alger/recommend", {}).then(function (r) {
 					setBusy(false);
-					if (r && !r.ok) flash("err", (r && r.guidance) || (r && r.error) || "随机推荐失败");
+					if (r && !r.ok) flash("err", (r && r.guidance) || (r && r.error) || "推荐失败");
 					// 成功时结果由宠物气泡播报（服务端 notice）
 					setTimeout(refresh, 600);
-				}).catch(function () { setBusy(false); flash("err", "随机推荐失败"); });
+				}).catch(function () { setBusy(false); flash("err", "推荐失败"); });
 			};
 
 			var onSearch = function () {
@@ -646,9 +673,6 @@ window.__ModuleLoader__.load({
 			// 已关闭：浮动区域完全不渲染，仅保留侧边栏底部开关作为恢复入口。
 			if (hidden) return null;
 
-			// 播放模式文案（0=列表循环 / 1=单曲循环 / 2=随机）
-			var playModeLabel = ["循环", "单曲", "随机"][state && typeof state.playMode === "number" ? state.playMode : 0] || "循环";
-
 			// 折叠态：会唱歌的宠物（作者形象 + 歌词气泡）
 			if (collapsed) {
 				var petImg = artistInfo && artistInfo.avatar ? artistInfo.avatar : (playing ? playing.albumPic : null);
@@ -728,32 +752,18 @@ window.__ModuleLoader__.load({
 							]),
 							// 切换形态：收起为宠物 / 展开播放器（月宝圆脸 ↔ 播放器卡片）
 							h("button", {
-								className: "dsa-btn",
+								className: "dsa-btn dsa-shape",
 								title: "收起为宠物 / 展开播放器",
 								onClick: function (e) { e.stopPropagation(); toggleCollapsed(); }
-							},
-								h("svg", {
-									width: 16,
-									height: 16,
-									viewBox: "0 0 16 16",
-									fill: "none",
-									stroke: "currentColor",
-									strokeWidth: 1.5,
-									strokeLinecap: "round"
-								}, [
-									h("rect", { x: "2.5", y: "5.5", width: "6", height: "6", rx: "3" }),
-									h("rect", { x: "10", y: "2.5", width: "4.5", height: "8.5", rx: "2" })
-								])
-							)
+							}, "变身")
 						])
 					]),
 					// 主体
 					h("div", { className: "dsa-body" }, [
 						// 传输控制（含收藏）
 						h("div", { className: "dsa-controls" }, [
-							h("button", { className: "dsa-btn dsa-mode", title: "随机播放（不知道听什么时用）", disabled: !canControl || busy, onClick: onRecommend }, "随机"),
-							h("button", { className: "dsa-btn dsa-mode", title: "播放模式：单击切换（循环/单曲/随机）", disabled: !canControl, onClick: function () { runCommand("playmode"); } }, playModeLabel),
-							h("button", { className: "dsa-btn", title: "音量-", disabled: !canControl, onClick: function () { runCommand("volume-down"); } }, ICONS.voldown),
+							h("button", { className: "dsa-btn dsa-mode", title: "推荐播放（不知道听什么时用）", disabled: !canControl || busy, onClick: onRecommend }, "推荐"),
+														h("button", { className: "dsa-btn", title: "音量-", disabled: !canControl, onClick: function () { runCommand("volume-down"); } }, ICONS.voldown),
 							h("button", { className: "dsa-btn", title: "上一首", disabled: !canControl, onClick: function () { runCommand("prev"); } }, ICONS.prev),
 							h("button", {
 								className: "dsa-btn dsa-btn-primary",
@@ -768,7 +778,13 @@ window.__ModuleLoader__.load({
 								title: "收藏/取消收藏当前歌曲",
 								disabled: !canControl || !playing,
 								onClick: onToggleFavorite
-							}, "♥")
+							}, "♥"),
+							h("button", {
+								className: "dsa-btn dsa-mode-icon",
+								title: "播放模式：单击切换（列表循环 / 单曲循环 / 随机）",
+								disabled: !canControl,
+								onClick: function () { runCommand("playmode"); }
+							}, h(PlayModeIcon, { mode: state && typeof state.playMode === "number" ? state.playMode : 0 }))
 						]),
 						// 播放列表
 						state && state.queue && Array.isArray(state.queue.items)
