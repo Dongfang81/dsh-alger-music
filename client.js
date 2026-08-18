@@ -1,4 +1,8 @@
 /**
+ * Copyright (C) 2026 DongfangXie (dongfangxie)
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+/**
  * dsh-alger-music —— Client half（浏览器浮动播放器）。
  *
  * 由 DSH web 的模块加载器（window.__ModuleLoader__.load）挂载：右下角浮动小窗，

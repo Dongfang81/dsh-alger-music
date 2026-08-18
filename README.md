@@ -18,7 +18,8 @@ DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **Alge
 
 ## 许可与致谢
 
-- 本插件（dsh-moony-singer）以 **MIT** 许可发布，见 [LICENSE](./LICENSE)。
+- 本插件（dsh-moony-singer）以 **GPL-3.0** 许可发布，见 [LICENSE](./LICENSE)。
+  你可以自由使用、修改与分发，但**任何分发或衍生作品（包括商用）都必须以相同许可开源**。
 - 本插件是**独立实现的控制/自动化工具**：不包含、不修改、不分发 AlgerMusicPlayer 及其任何依赖的代码，
   仅通过 App 自身提供的本地 HTTP 服务（30488/31888）与 Chromium CDP 调试协议与其互操作。
 - 所驱动的 [AlgerMusicPlayer](https://github.com/algerkong/AlgerMusicPlayer) 以 **MIT** 许可发布

@@ -1,4 +1,8 @@
 /**
+ * Copyright (C) 2026 DongfangXie (dongfangxie)
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+/**
  * dsh-alger-music —— 本地音乐控制插件（服务端工具型 + Web 路由，零运行时依赖）。
  *
  * 驱动开源播放器 AlgerMusicPlayer（macOS /Applications/AlgerMusicPlayer.app）：
