@@ -13,8 +13,11 @@ DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **Alge
 
 ## 🐰 宠物 IP：月宝 Moony
 
-圆脸 + 耳朵 —— 所有宠物共用圆形脸（可装载照片 / 贴图 / 表情），
-靠不同耳朵的造型 / 颜色 / 动效区分身份。完整定义见 [docs/IP.md](./docs/IP.md)。
+Moony 现在包含常驻初代 **Moony Classic** 与六只 First Wave 成员。展开音乐浮窗即可切换角色；选择保存在浏览器本地，异常值自动回退 Classic。
+
+![Moony Classic 与 First Wave](docs/moony-series.png)
+
+核心规则：空闲脸完全留白；播放时圆脸只显示歌手或唱片内容；身份和状态由月化耳朵、可选尾巴、耳尖信号灯及动作表达。完整规范见 [docs/IP.md](docs/IP.md)。
 
 ## 许可与致谢
 
