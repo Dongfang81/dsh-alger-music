@@ -105,8 +105,12 @@ function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } 
 	let mountedPlayer;
 	let tree;
 	let hookIndex = 0;
-	const hooks = [];
+	let effectIndex = 0;
+	let activeHooks;
+	const musicHooks = [];
+	const footerHooks = [];
 	const listeners = {};
+	const registrations = [];
 	const values = new Map(storedId ? [['dsh-moony-singer:pet-id:v1', storedId]] : []);
 	const storage = {
 		getItem(key) { return values.get(key) ?? null; },
@@ -117,24 +121,43 @@ function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } 
 		playing: { isPlaying: true, song: { id: 'song-1', name: 'Paper Moon', artists: 'Ella', albumPic: 'https://img.test/moon.jpg' } }
 	};
 	const rerender = function () {
+		activeHooks = musicHooks;
 		hookIndex = 0;
+		effectIndex = 0;
 		tree = mountedPlayer.type(mountedPlayer.props);
+	};
+	const footerToggle = function () {
+		const registration = registrations.find(({ descriptor }) => descriptor.id === 'moony-singer-pet-toggle');
+		assert.ok(registration, 'Moony footer toggle must be registered');
+		activeHooks = footerHooks;
+		hookIndex = 0;
+		effectIndex = 0;
+		let element = registration.component({ wide: true });
+		while (element && typeof element.type === 'function') element = element.type(element.props);
+		return element;
 	};
 	const react = {
 		createElement(type, props, ...children) {
 			return { type, props: { ...(props || {}), children: toChildren(children) } };
 		},
 		useCallback(fn) { hookIndex++; return fn; },
-		useEffect() { hookIndex++; },
+		useEffect(callback) {
+			hookIndex++;
+			if (effectIndex++ === 0) callback();
+		},
 		useRef(value) {
 			const index = hookIndex++;
-			if (!(index in hooks)) hooks[index] = { current: value };
-			return hooks[index];
+			if (!(index in activeHooks)) activeHooks[index] = { current: value };
+			return activeHooks[index];
 		},
 		useState(value) {
 			const index = hookIndex++;
-			if (!(index in hooks)) hooks[index] = index === 0 ? playerState : (typeof value === 'function' ? value() : value);
-			return [hooks[index], (next) => { hooks[index] = typeof next === 'function' ? next(hooks[index]) : next; rerender(); }];
+			const hookSet = activeHooks;
+			if (!(index in hookSet)) hookSet[index] = hookSet === musicHooks && index === 0 ? playerState : (typeof value === 'function' ? value() : value);
+			return [hookSet[index], (next) => {
+				hookSet[index] = typeof next === 'function' ? next(hookSet[index]) : next;
+				if (hookSet === musicHooks) rerender(); else footerToggle();
+			}];
 		}
 	};
 	const document = {
@@ -166,8 +189,23 @@ function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } 
 		if (name === 'react-dom') return { render(element) { mountedPlayer = element; rerender(); }, unmountComponentAtNode() {} };
 		throw new Error(`unexpected client dependency: ${name}`);
 	});
-	client.apply({ effect(callback) { callback(); } });
-	return { client, listeners, storage, tree: () => tree };
+	client.apply({
+		effect(callback) { callback(); },
+		slots: {
+			inject(name, callback) { assert.equal(name, 'sidebar.footer.action'); callback(); },
+			register(descriptor, component) { registrations.push({ descriptor, component }); }
+		}
+	});
+	const renderPickers = function () {
+		const render = function (node) {
+			if (Array.isArray(node)) return node.map(render);
+			if (!node || typeof node !== 'object') return node;
+			if (node.type === client.MoonyPicker) return render(node.type(node.props));
+			return { ...node, props: { ...node.props, children: render(node.props?.children) } };
+		};
+		return render(tree);
+	};
+	return { client, footerToggle, listeners, renderPickers, storage, tree: () => tree };
 }
 
 test('MusicPlayer preserves the selected Moony through the collapsed and expanded player flows', () => {
@@ -211,6 +249,24 @@ test('MusicPlayer keeps character selection usable when acquiring localStorage t
 	const pickerTree = picker.type(picker.props);
 	assert.doesNotThrow(() => findNodes(pickerTree, (node) => node.props?.['data-moony-choice'] === 'hush')[0].props.onClick());
 	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker)[0].props.selectedId, 'hush');
+});
+
+test('MusicPlayer hides through the footer control and renders one picker only inside the expanded body', () => {
+	const harness = loadMusicPlayerHarness({ storedId: 'pulse' });
+	let footer = harness.footerToggle();
+	footer.props.children.props.onClick();
+	assert.equal(harness.tree(), null);
+
+	footer = harness.footerToggle();
+	footer.props.children.props.onClick();
+	let pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
+	assert.ok(pet);
+	pet.props.onClick({ stopPropagation() {} });
+	const rendered = harness.renderPickers();
+	const body = findNodes(rendered, (node) => node.props?.className === 'dsa-body')[0];
+	const allPickers = findNodes(rendered, (node) => node.props?.className === 'dsa-moony-picker');
+	assert.equal(allPickers.length, 1);
+	assert.equal(findNodes(body, (node) => node.props?.className === 'dsa-moony-picker').length, 1);
 });
 
 test('picker exposes seven buttons and selects the clicked character', () => {
