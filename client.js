@@ -200,29 +200,6 @@ window.__ModuleLoader__.load({
 			".dsa-pet-ear{position:absolute;top:-9px;width:18px;height:18px;border-radius:50% 50% 0 0;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:2px solid rgba(255,255,255,0.65);border-bottom:none;transform-origin:50% 100%}",
 			".dsa-pet-ear.left{left:3px}",
 			".dsa-pet-ear.right{right:3px}",
-			/* ---- 月宝系列耳朵造型（固定圆脸，耳朵即身份） ---- */
-			/* 兔耳 · 蹦蹦：长圆耳，白底粉尖 */
-			".dsa-pet.pet-bunny .dsa-pet-ear{width:14px;height:30px;top:-24px;border-radius:50% 50% 0 0;background:linear-gradient(180deg,#ffffff 0 52%,#f9a8d4 52% 100%);border-color:rgba(255,255,255,0.8)}",
-			".dsa-pet.pet-bunny .dsa-pet-ear.left{left:2px}",
-			".dsa-pet.pet-bunny .dsa-pet-ear.right{right:2px}",
-			/* 尖耳 · 喵喵：三角形橘猫耳 */
-			".dsa-pet.pet-cat .dsa-pet-ear{width:16px;height:22px;top:-10px;border:none;border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);background:linear-gradient(180deg,#fb923c,#ea580c);transform-origin:50% 100%}",
-			".dsa-pet.pet-cat .dsa-pet-ear.left{left:0}",
-			".dsa-pet.pet-cat .dsa-pet-ear.right{right:0}",
-			/* 狐耳 · 狐狐：高三角形，橘身深尖 */
-			".dsa-pet.pet-fox .dsa-pet-ear{width:18px;height:26px;top:-12px;border:none;border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%);background:linear-gradient(180deg,#fbbf24 0 55%,#7c2d12 55% 100%);transform-origin:50% 100%}",
-			".dsa-pet.pet-fox .dsa-pet-ear.left{left:0}",
-			".dsa-pet.pet-fox .dsa-pet-ear.right{right:0}",
-			/* 折耳 · 垂垂：奶茶色垂耳，挂在脸侧 */
-			".dsa-pet.pet-floppy .dsa-pet-ear{width:18px;height:26px;top:-2px;border-radius:10px 10px 16px 16px;border-color:rgba(255,255,255,0.55);background:linear-gradient(160deg,#d6b48c,#a97b4f);transform-origin:50% 0}",
-			".dsa-pet.pet-floppy .dsa-pet-ear.left{left:-9px;transform:rotate(16deg)}",
-			".dsa-pet.pet-floppy .dsa-pet-ear.right{right:-9px;transform:rotate(-16deg)}",
-			/* ---- 宠物选择器 ---- */
-			".dsa-pet-picker{display:flex;align-items:center;gap:5px;margin-top:8px;flex-wrap:wrap}",
-			".dsa-pet-picker-label{font-size:11px;color:rgba(255,255,255,0.55);margin-right:2px}",
-			".dsa-pet-chip{border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.75);border-radius:999px;font-size:11px;line-height:1.6;padding:2px 10px;cursor:pointer}",
-			".dsa-pet-chip:hover{background:rgba(255,255,255,0.12)}",
-			".dsa-pet-chip.on{background:rgba(96,165,250,0.2);border-color:rgba(96,165,250,0.55);color:#fff;font-weight:600}",
 			"@keyframes dsa-ear-wiggle{from{transform:rotate(-7deg)}to{transform:rotate(7deg)}}",
 			"@keyframes dsa-ear-tilt{0%,100%{transform:translateX(-2px)}50%{transform:translateX(2px)}}",
 			"@keyframes dsa-ear-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}",
@@ -287,16 +264,6 @@ window.__ModuleLoader__.load({
 			return function () { petVis.subs = petVis.subs.filter(function (f) { return f !== fn; }); };
 		}
 
-		/* ---------- 月宝 Moony 系列：固定圆脸 + 不同耳朵（造型/颜色=身份，状态动效=通用） ---------- */
-		var MOONY_PETS = [
-			{ id: 'moony', name: '月宝', desc: '圆耳 · 蓝紫渐变' },
-			{ id: 'bunny', name: '蹦蹦', desc: '兔耳 · 粉白' },
-			{ id: 'cat', name: '喵喵', desc: '尖耳 · 橘猫' },
-			{ id: 'fox', name: '狐狐', desc: '狐耳 · 橘白' },
-			{ id: 'floppy', name: '垂垂', desc: '折耳 · 奶茶' }
-		];
-		var STORAGE_PET = 'moony-pet';
-
 		/* ---------- 侧边栏底部宠物开关（与一键重启同组） ---------- */
 		function PetToggleButton() {
 			var [hidden, setHidden] = React.useState(petVis.hidden);
@@ -347,17 +314,6 @@ window.__ModuleLoader__.load({
 			// 关闭/激活与侧边栏开关按钮共享（pub/sub）
 			var [hidden, setHidden] = React.useState(petVis.hidden);
 			React.useEffect(function () { return onPetHidden(setHidden); }, []);
-			// 当前宠物（系列选择，localStorage 记忆）
-			var [petId, setPetIdState] = React.useState(function () {
-				try {
-					var v = localStorage.getItem(STORAGE_PET);
-					return MOONY_PETS.some(function (p) { return p.id === v; }) ? v : 'moony';
-				} catch { return 'moony'; }
-			});
-			var setPetId = function (id) {
-				setPetIdState(id);
-				try { localStorage.setItem(STORAGE_PET, id); } catch {}
-			};
 			var [notice, setNotice] = React.useState(null); // {kind:'ok'|'err'|'', text}
 			var [busy, setBusy] = React.useState(false);
 			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
@@ -718,7 +674,6 @@ window.__ModuleLoader__.load({
 						: null,
 					h("div", {
 						className: "dsa-pet" +
-							(petId !== 'moony' ? " pet-" + petId : "") +
 							(isPlaying ? " singing" : "") +
 							(state && state.agentStatus && state.agentStatus !== "idle" ? " dsa-agent-" + state.agentStatus : ""),
 						title: "展开播放器",
@@ -791,18 +746,6 @@ window.__ModuleLoader__.load({
 								disabled: !canControl || !playing,
 								onClick: onToggleFavorite
 							}, "♥")
-						]),
-						// 宠物选择（月宝系列：同一圆脸，不同耳朵）
-						h("div", { className: "dsa-pet-picker" }, [
-							h("span", { className: "dsa-pet-picker-label" }, "宠物"),
-							MOONY_PETS.map(function (p) {
-								return h("button", {
-									key: p.id,
-									className: "dsa-pet-chip" + (p.id === petId ? " on" : ""),
-									title: p.name + " · " + p.desc,
-									onClick: function () { setPetId(p.id); }
-								}, p.name);
-							})
 						]),
 						// 播放列表
 						state && state.queue && Array.isArray(state.queue.items)
