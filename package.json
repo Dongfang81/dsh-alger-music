@@ -1,6 +1,6 @@
 {
   "name": "dsh-moony-singer",
-  "version": "0.1.20",
+  "version": "0.1.22",
   "description": "DSH 本地音乐控制插件：驱动开源播放器 AlgerMusicPlayer，附带浏览器浮动播放小窗。走 App 自带的本地服务——30488 音乐 API（搜索/详情/歌词）+ 31888 远程控制（播放/暂停/切歌/音量）+ CDP（点歌直达播放）。零运行时依赖。",
   "type": "module",
   "main": "index.js",

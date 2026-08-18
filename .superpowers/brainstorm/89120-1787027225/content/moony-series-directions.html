@@ -1,0 +1,112 @@
+<style>
+  :root {
+    color-scheme: dark;
+    --ink: #f6f2ff;
+    --muted: #aaa3bb;
+    --line: rgba(255,255,255,.11);
+    --panel: rgba(26,23,38,.82);
+  }
+  * { box-sizing: border-box; }
+  .moony-board {
+    min-height: 100vh;
+    padding: 44px clamp(20px, 5vw, 72px) 54px;
+    color: var(--ink);
+    background:
+      radial-gradient(circle at 12% 0%, rgba(121, 90, 255, .24), transparent 34%),
+      radial-gradient(circle at 92% 12%, rgba(52, 200, 255, .13), transparent 29%),
+      linear-gradient(145deg, #0d0b14, #151122 58%, #0d0b13);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  }
+  .eyebrow { margin: 0 0 10px; color: #a992ff; font-size: 12px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
+  h1 { margin: 0; max-width: 880px; font-size: clamp(30px, 4.4vw, 57px); line-height: 1.06; letter-spacing: -.045em; }
+  .lead { max-width: 760px; margin: 17px 0 32px; color: #c2bbcf; font-size: 16px; line-height: 1.7; }
+  .rule-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+  .rule-strip span { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.045); color: #c9c3d6; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+  .direction {
+    position: relative;
+    min-height: 472px;
+    overflow: hidden;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: var(--panel);
+    box-shadow: 0 20px 50px rgba(0,0,0,.25);
+    cursor: pointer;
+    transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  .direction:hover { transform: translateY(-4px); border-color: rgba(255,255,255,.24); }
+  .direction.selected { border-color: #a98dff; box-shadow: 0 0 0 2px rgba(169,141,255,.22), 0 24px 70px rgba(55,30,128,.32); }
+  .badge { position: absolute; top: 18px; right: 18px; padding: 6px 9px; border-radius: 999px; background: rgba(255,255,255,.09); color: #d8d2e4; font-size: 10px; letter-spacing: .08em; }
+  .stage { height: 205px; display: grid; place-items: center; margin: 12px 0 10px; border-radius: 18px; background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.015)); }
+  .pet { position: relative; width: 132px; height: 132px; }
+  .face { position: absolute; inset: 20px 8px 0; z-index: 2; display: grid; place-items: center; overflow: hidden; border-radius: 50%; border: 5px solid rgba(255,255,255,.9); background: radial-gradient(circle at 38% 32%, #f9f6ff 0 9%, #d9d1e6 48%, #a59bb8 100%); box-shadow: inset -10px -12px 22px rgba(40,28,61,.22), 0 15px 32px rgba(0,0,0,.3); }
+  .face::before { content: ""; width: 50px; height: 38px; border-radius: 48% 52% 45% 55%; background: radial-gradient(circle at 35% 40%, rgba(104,87,128,.2) 0 4px, transparent 5px), radial-gradient(circle at 72% 64%, rgba(104,87,128,.16) 0 6px, transparent 7px); opacity: .75; }
+  .eyes { position: absolute; z-index: 3; left: 44px; top: 77px; width: 46px; height: 7px; border-left: 5px solid #312b3b; border-right: 5px solid #312b3b; border-radius: 50%; }
+  .moon-mark { position: absolute; z-index: 4; right: 15px; bottom: 18px; width: 14px; height: 14px; border-radius: 50%; box-shadow: -4px 0 0 0 #7a5cea; }
+  .ears { position: absolute; inset: 0; z-index: 1; }
+  .relic .ear { position: absolute; top: 3px; width: 48px; height: 71px; border-radius: 55% 45% 22% 28%; background: linear-gradient(145deg, #a891ff, #4c42a7); border: 4px solid #d7ceff; box-shadow: inset -7px -7px 12px rgba(28,20,85,.28); transform: rotate(-22deg); }
+  .relic .ear:nth-child(1) { left: 14px; }
+  .relic .ear:nth-child(2) { right: 14px; transform: scaleX(-1) rotate(-22deg); }
+  .relic .ear::after { content: ""; position: absolute; inset: 11px 13px 15px; border-radius: inherit; background: rgba(255,255,255,.18); }
+  .soft .ear { position: absolute; top: 2px; width: 42px; height: 80px; border-radius: 50% 50% 38% 38%; background: #f0b9d6; border: 5px solid #fff0f7; transform: rotate(-10deg); }
+  .soft .ear:nth-child(1) { left: 18px; }
+  .soft .ear:nth-child(2) { right: 18px; transform: rotate(10deg); }
+  .soft .ear::after { content: ""; position: absolute; inset: 10px 10px 20px; border-radius: inherit; background: #d97dae; }
+  .stagepersona .ear { position: absolute; top: 11px; width: 55px; height: 58px; clip-path: polygon(50% 0,100% 100%,0 78%); background: linear-gradient(135deg,#43dcff,#7755ff 55%,#ff4fd8); filter: drop-shadow(0 0 10px rgba(67,220,255,.42)); }
+  .stagepersona .ear:nth-child(1) { left: 7px; transform: rotate(-13deg); }
+  .stagepersona .ear:nth-child(2) { right: 7px; transform: scaleX(-1) rotate(-13deg); }
+  .stagepersona .halo { position: absolute; z-index: 4; left: 40px; top: 13px; width: 55px; height: 12px; border-radius: 50%; border: 3px solid #56e0ff; box-shadow: 0 0 12px #56e0ff; }
+  .direction h2 { margin: 4px 0 8px; font-size: 20px; letter-spacing: -.02em; }
+  .direction p { margin: 0 0 15px; min-height: 70px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+  .traits { display: flex; flex-wrap: wrap; gap: 7px; }
+  .traits span { padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,.055); color: #c7c0d1; font-size: 11px; }
+  .verdict { margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--line); color: #9d95aa; font-size: 11px; line-height: 1.5; }
+  .recommended .verdict { color: #b9a8ff; }
+  .prompt { margin: 26px 0 0; padding: 15px 17px; border-left: 3px solid #9a7cff; border-radius: 4px 12px 12px 4px; background: rgba(124,94,233,.1); color: #dcd5e8; font-size: 14px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .direction { min-height: auto; } .direction p { min-height: auto; } }
+</style>
+
+<main class="moony-board">
+  <p class="eyebrow">Moony IP System · Direction 01</p>
+  <h1>先确定“全系列一眼都是 Moony”的母体语言</h1>
+  <p class="lead">三条路线都保留固定月球圆脸，区别在于耳朵究竟是雕塑身份、动物身份，还是舞台装备。点击最接近你心中 Moony 的方向；下一步我会沿它展开首批 6 只角色。</p>
+  <div class="rule-strip">
+    <span>固定圆脸比例</span><span>耳朵承担身份</span><span>脸是内容容器</span><span>状态色只做信号</span><span>可选尾巴</span>
+  </div>
+
+  <section class="grid">
+    <article class="direction recommended" data-choice="A 月相遗物" onclick="toggleSelect(this)">
+      <span class="badge">推荐</span>
+      <div class="stage">
+        <div class="pet relic"><div class="ears"><i class="ear"></i><i class="ear"></i></div><div class="face"></div><i class="eyes"></i><i class="moon-mark"></i></div>
+      </div>
+      <h2>A · 月相遗物</h2>
+      <p>耳朵不是直接复制动物，而像从月球长出的“身份器官”：厚实、可收藏、有独特切面与材质。统一性最强，也最容易发展成原创潮玩系列。</p>
+      <div class="traits"><span>雕塑感</span><span>原创性强</span><span>可做盲盒</span><span>长线耐看</span></div>
+      <div class="verdict">优势：最不像普通网页挂件；风险：需要为每只角色建立更精确的造型语法。</div>
+    </article>
+
+    <article class="direction" data-choice="B 软萌动物" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="pet soft"><div class="ears"><i class="ear"></i><i class="ear"></i></div><div class="face"></div><i class="eyes"></i><i class="moon-mark"></i></div>
+      </div>
+      <h2>B · 软萌动物</h2>
+      <p>兔、猫、狐、犬等耳型直接转化成柔软毛绒造型，亲和力高、无需解释，一眼就知道每只是什么性格。</p>
+      <div class="traits"><span>亲和</span><span>易理解</span><span>毛绒感</span><span>动物性格</span></div>
+      <div class="verdict">优势：最快讨喜；风险：容易再次变成“同一张脸换动物耳朵”，原创辨识度偏弱。</div>
+    </article>
+
+    <article class="direction" data-choice="C 音乐舞台" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="pet stagepersona"><div class="ears"><i class="ear"></i><i class="ear"></i></div><div class="face"></div><i class="eyes"></i><i class="moon-mark"></i><i class="halo"></i></div>
+      </div>
+      <h2>C · 音乐舞台</h2>
+      <p>把耳朵做成耳机、声波角、灯牌与舞台头饰。每只 Moony 对应一种音乐人格，节拍动效天然融入身份。</p>
+      <div class="traits"><span>音乐原生</span><span>霓虹</span><span>动效强</span><span>舞台人格</span></div>
+      <div class="verdict">优势：和“音乐宠物”功能结合最紧；风险：视觉信息较多，可能弱化圆脸本体。</div>
+    </article>
+  </section>
+
+  <p class="prompt">请点击 A / B / C。也可以告诉我：想以某一条为主，再混入另一条的哪些元素。</p>
+</main>

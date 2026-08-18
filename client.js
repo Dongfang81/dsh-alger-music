@@ -100,11 +100,6 @@ window.__ModuleLoader__.load({
 			".dsa-btn-primary{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,rgba(255,255,255,0.95),rgba(255,255,255,0.72));color:#11131f;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,0.35)}",
 			".dsa-btn-primary:hover{filter:brightness(1.05)}",
 			".dsa-mode{font-size:10px;min-width:32px;padding:0 3px;color:rgba(255,255,255,0.85)}",
-			".dsa-traffic{flex:none;display:flex;align-items:center;gap:5px;margin-right:2px}",
-			".dsa-tl{width:12px;height:12px;border-radius:50%;border:none;padding:0;display:flex;align-items:center;justify-content:center;font-size:9px;line-height:1;color:transparent;cursor:pointer;flex:none}",
-			".dsa-tl:hover{color:rgba(0,0,0,0.55)}",
-			".dsa-tl.close{background:#ff5f57}",
-			".dsa-tl.min{background:#febc2e}",
 			".dsa-body{padding:2px 12px 12px}",
 			".dsa-controls{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}",
 			".dsa-search{display:flex;gap:6px;margin-top:8px}",
@@ -445,6 +440,18 @@ window.__ModuleLoader__.load({
 				refresh();
 			};
 
+			// 随机推荐播放：不知道听什么时一键随机
+			var onRecommend = function () {
+				if (!state || !state.remoteUp) { flash("err", "远程控制未就绪，请先点“连接”"); return; }
+				setBusy(true);
+				post("/dsh-alger/recommend", {}).then(function (r) {
+					setBusy(false);
+					if (r && !r.ok) flash("err", (r && r.guidance) || (r && r.error) || "随机推荐失败");
+					// 成功时结果由宠物气泡播报（服务端 notice）
+					setTimeout(refresh, 600);
+				}).catch(function () { setBusy(false); flash("err", "随机推荐失败"); });
+			};
+
 			var onSearch = function () {
 				var q = query.trim();
 				if (!q) return;
@@ -698,12 +705,8 @@ window.__ModuleLoader__.load({
 				style: { position: "fixed", left: pos ? pos.x : window.innerWidth - WIDTH - 18, top: pos ? pos.y : window.innerHeight - 300, zIndex: 2147483000 }
 			}, [
 				h("div", { className: "dsa-card" }, [
-					// 头部（拖动手柄）：左=Mac风格红黄按钮，右=连接状态
+					// 头部（拖动手柄）：封面 + 标题 + 右侧[已连接][切换形态]
 					h("div", { className: "dsa-header dsa-drag", onPointerDown: onDragStart }, [
-						h("div", { className: "dsa-traffic" }, [
-							h("button", { className: "dsa-tl close", title: "关闭浮窗", onClick: function (e) { e.stopPropagation(); setPetHidden(true); } }, "×"),
-							h("button", { className: "dsa-tl min", title: "收起为宠物（最小化）", onClick: function (e) { e.stopPropagation(); toggleCollapsed(); } }, "–")
-						]),
 						h("div", { className: "dsa-cover" },
 							playing && playing.albumPic
 								? h("img", { src: playing.albumPic, alt: "", draggable: false })
@@ -722,13 +725,33 @@ window.__ModuleLoader__.load({
 							}, [
 								h("span", { className: "dot " + dot }),
 								h("span", null, connLabel)
-							])
+							]),
+							// 切换形态：收起为宠物 / 展开播放器（月宝圆脸 ↔ 播放器卡片）
+							h("button", {
+								className: "dsa-btn",
+								title: "收起为宠物 / 展开播放器",
+								onClick: function (e) { e.stopPropagation(); toggleCollapsed(); }
+							},
+								h("svg", {
+									width: 16,
+									height: 16,
+									viewBox: "0 0 16 16",
+									fill: "none",
+									stroke: "currentColor",
+									strokeWidth: 1.5,
+									strokeLinecap: "round"
+								}, [
+									h("rect", { x: "2.5", y: "5.5", width: "6", height: "6", rx: "3" }),
+									h("rect", { x: "10", y: "2.5", width: "4.5", height: "8.5", rx: "2" })
+								])
+							)
 						])
 					]),
 					// 主体
 					h("div", { className: "dsa-body" }, [
 						// 传输控制（含收藏）
 						h("div", { className: "dsa-controls" }, [
+							h("button", { className: "dsa-btn dsa-mode", title: "随机播放（不知道听什么时用）", disabled: !canControl || busy, onClick: onRecommend }, "随机"),
 							h("button", { className: "dsa-btn dsa-mode", title: "播放模式：单击切换（循环/单曲/随机）", disabled: !canControl, onClick: function () { runCommand("playmode"); } }, playModeLabel),
 							h("button", { className: "dsa-btn", title: "音量-", disabled: !canControl, onClick: function () { runCommand("volume-down"); } }, ICONS.voldown),
 							h("button", { className: "dsa-btn", title: "上一首", disabled: !canControl, onClick: function () { runCommand("prev"); } }, ICONS.prev),

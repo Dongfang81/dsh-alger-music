@@ -1,0 +1,74 @@
+<style>
+  .face-board { padding: 18px 4px 28px; }
+  .face-board h2 { max-width: 820px; font-size: clamp(28px, 4vw, 48px); letter-spacing: -.04em; line-height: 1.08; }
+  .face-board .subtitle { max-width: 800px; font-size: 15px; line-height: 1.7; }
+  .semantic-note { margin: 22px 0 26px; padding: 14px 16px; border: 1px solid rgba(169,141,255,.28); border-radius: 14px; background: rgba(129,91,255,.08); color: #d8d0ea; font-size: 13px; line-height: 1.65; }
+  .face-cards { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 15px; }
+  .face-option { min-height: 470px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 22px; background: rgba(25,22,35,.82); cursor: pointer; transition: .2s ease; }
+  .face-option:hover { transform: translateY(-3px); border-color: rgba(255,255,255,.26); }
+  .face-option.selected { border-color: #a78cff; box-shadow: 0 0 0 2px rgba(167,140,255,.18); }
+  .face-demo { min-height: 242px; padding: 24px 14px 18px; display: flex; align-items: center; justify-content: center; gap: 10px; background: radial-gradient(circle at 50% 12%,rgba(145,109,255,.16),transparent 58%); }
+  .mode { text-align: center; }
+  .mode-label { display: block; margin-top: 9px; color: #8f879d; font-size: 10px; letter-spacing: .05em; }
+  .head { position: relative; width: 84px; height: 84px; }
+  .head .ear { position: absolute; top: -13px; width: 27px; height: 39px; z-index: 0; border-radius: 56% 44% 24% 30%; background: linear-gradient(145deg,#b59fff,#6351bb); border: 2px solid #ddd5ff; }
+  .head .ear.left { left: 8px; transform: rotate(-20deg); }
+  .head .ear.right { right: 8px; transform: rotate(20deg); }
+  .disc { position: absolute; inset: 5px; z-index: 1; overflow: hidden; border-radius: 50%; border: 4px solid #f5f0ff; background: linear-gradient(145deg,#eee9f4,#b9afc9); box-shadow: 0 11px 24px rgba(0,0,0,.28); }
+  .disc .crescent-mark { position:absolute;right:7px;bottom:10px;width:10px;height:10px;border-radius:50%;box-shadow:-3px 0 0 #8062e4; }
+  .avatar .eye { position:absolute;top:29px;width:8px;height:10px;border-radius:50%;background:#2f2938; }
+  .avatar .eye.left { left:21px; } .avatar .eye.right { right:21px; }
+  .avatar .mouth { position:absolute;left:29px;top:47px;width:15px;height:8px;border-bottom:3px solid #2f2938;border-radius:0 0 50% 50%; }
+  .photo { background: linear-gradient(150deg,#29283c,#715aa1 50%,#d186aa); }
+  .photo::before { content:"";position:absolute;left:25px;top:12px;width:27px;height:29px;border-radius:50%;background:#29202e;box-shadow:0 27px 0 10px #413044; }
+  .photo::after { content:"歌手";position:absolute;inset:auto 0 8px;text-align:center;color:white;font-size:9px;font-weight:700;letter-spacing:.08em;text-shadow:0 1px 4px #000; }
+  .album { display:grid;place-items:center;background:conic-gradient(from 120deg,#ff6da8,#754dff,#39d8ff,#ffca69,#ff6da8); }
+  .album::before { content:"♪";display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#1f1a2a;color:white;font-size:22px; }
+  .fixed-face .disc { background:linear-gradient(145deg,#f1edf7,#bab0c9); }
+  .media-tile { position:absolute;right:-9px;bottom:-10px;z-index:3;width:30px;height:30px;display:grid;place-items:center;border:2px solid white;border-radius:8px;background:linear-gradient(135deg,#ff79af,#6a51e9);color:#fff;font-size:14px;box-shadow:0 5px 12px rgba(0,0,0,.3); }
+  .fusion .disc { background:linear-gradient(150deg,#312c43,#8461a1 55%,#d1899f); }
+  .fusion .disc::before { content:"";position:absolute;left:23px;top:10px;width:29px;height:31px;border-radius:50%;background:#251f2b;box-shadow:0 29px 0 11px #49374d; }
+  .fusion .eye { z-index:2;background:#fff;box-shadow:0 0 6px #fff; }
+  .fusion .mouth { z-index:2;border-color:#fff; }
+  .face-copy { padding: 18px 19px 21px; }
+  .face-copy h3 { margin:0 0 8px;font-size:19px; }
+  .face-copy p { margin:0 0 14px;min-height:82px;color:#aaa3b7;font-size:12px;line-height:1.65; }
+  .rule { padding:10px 11px;border-radius:10px;background:rgba(255,255,255,.05);color:#c8c1d4;font-size:11px;line-height:1.55; }
+  .recommended { position:relative; }
+  .recommended::after { content:"推荐";position:absolute;right:14px;top:14px;z-index:5;padding:5px 8px;border-radius:999px;background:#7a5ce4;color:white;font-size:10px; }
+  .warning { margin-top:20px;color:#9f96aa;font-size:12px;line-height:1.6; }
+  @media (max-width:900px){.face-cards{grid-template-columns:1fr}.face-option{min-height:auto}.face-copy p{min-height:auto}}
+</style>
+
+<section class="face-board">
+  <div class="label">修正 01 · 脸的语义</div>
+  <h2>你看到的不是“五官没画好”，而是脸没有被赋予明确角色</h2>
+  <p class="subtitle">Moony 的圆脸必须只承担一种清晰逻辑。下面三种不是表情风格，而是三个不同的 IP 规则。</p>
+  <div class="semantic-note"><strong>上一版的问题：</strong>月球坑、眼睛、月牙标记和照片容器被同时塞进一个圆里，没有主次，也没有解释它们何时出现，所以看起来像随机符号。</div>
+
+  <div class="face-cards">
+    <article class="face-option recommended" data-choice="A 月面屏幕" onclick="toggleSelect(this)">
+      <div class="face-demo">
+        <div class="mode"><div class="head"><i class="ear left"></i><i class="ear right"></i><div class="disc avatar"><i class="eye left"></i><i class="eye right"></i><i class="mouth"></i><i class="crescent-mark"></i></div></div><span class="mode-label">空闲＝表情</span></div>
+        <div class="mode"><div class="head"><i class="ear left"></i><i class="ear right"></i><div class="disc photo"><i class="crescent-mark"></i></div></div><span class="mode-label">播放＝歌手</span></div>
+        <div class="mode"><div class="head"><i class="ear left"></i><i class="ear right"></i><div class="disc album"><i class="crescent-mark"></i></div></div><span class="mode-label">唱片＝封面</span></div>
+      </div>
+      <div class="face-copy"><h3>A · 月面屏幕</h3><p>圆脸是会切换内容的“月面显示器”。空闲时才出现完整表情；显示歌手照片或专辑时，眼睛和嘴全部消失，不叠加。</p><div class="rule">唯一永久符号：圆形外框＋边缘的小月牙识别标；内容一次只显示一种。</div></div>
+    </article>
+
+    <article class="face-option" data-choice="B 固定人格脸" onclick="toggleSelect(this)">
+      <div class="face-demo">
+        <div class="mode"><div class="head fixed-face"><i class="ear left"></i><i class="ear right"></i><div class="disc avatar"><i class="eye left"></i><i class="eye right"></i><i class="mouth"></i><i class="crescent-mark"></i></div><i class="media-tile">♪</i></div><span class="mode-label">脸永远不变</span></div>
+      </div>
+      <div class="face-copy"><h3>B · 固定人格脸</h3><p>Moony 永远拥有同一套眼睛和嘴，音乐、歌手与唱片改在旁边的信息气泡展示。最像传统潮玩角色。</p><div class="rule">优点是人格最强；代价是放弃“歌手照片就是圆脸”的现有核心玩法。</div></div>
+    </article>
+
+    <article class="face-option" data-choice="C 融合面具" onclick="toggleSelect(this)">
+      <div class="face-demo">
+        <div class="mode"><div class="head fusion"><i class="ear left"></i><i class="ear right"></i><div class="disc avatar"><i class="eye left"></i><i class="eye right"></i><i class="mouth"></i><i class="crescent-mark"></i></div></div><span class="mode-label">照片＋五官叠加</span></div>
+      </div>
+      <div class="face-copy"><h3>C · 融合面具</h3><p>照片、专辑纹理始终在底层，统一五官覆盖在上面。识别度强，但照片容易变得诡异，视觉信息也最混乱。</p><div class="rule">这最接近上一版的错误来源，不建议作为系列基础。</div></div>
+    </article>
+  </div>
+  <p class="warning">请点击一个方向。若选 A，下一步会继续确定“空闲表情”的固定五官语言，但它绝不会覆盖歌手照片或专辑封面。</p>
+</section>

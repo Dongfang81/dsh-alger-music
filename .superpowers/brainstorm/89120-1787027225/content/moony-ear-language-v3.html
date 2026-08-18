@@ -1,0 +1,45 @@
+<style>
+  .ear-page{padding:14px 2px 30px}.ear-page h2{max-width:900px;font-size:clamp(28px,4vw,48px);line-height:1.08;letter-spacing:-.04em}.ear-page>.subtitle{max-width:820px;line-height:1.7}
+  .ear-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin-top:26px}.ear-card{position:relative;overflow:hidden;min-height:465px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:rgba(24,21,34,.84);cursor:pointer;transition:.2s}.ear-card:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.26)}.ear-card.selected{border-color:#a88cff;box-shadow:0 0 0 2px rgba(168,140,255,.18)}
+  .tag{position:absolute;right:14px;top:14px;z-index:10;padding:5px 8px;border-radius:999px;background:#7657df;color:#fff;font-size:10px}.lineup{min-height:245px;display:flex;align-items:center;justify-content:center;gap:8px;padding:35px 10px 12px;background:radial-gradient(circle at 50% 16%,rgba(140,103,255,.16),transparent 60%)}
+  .mini{position:relative;width:70px;height:94px}.disc{position:absolute;left:7px;top:25px;z-index:3;width:56px;height:56px;border-radius:50%;border:3px solid rgba(255,255,255,.92);background:linear-gradient(145deg,#eeeaf3,#b8afc6);box-shadow:0 9px 19px rgba(0,0,0,.3)}.ear{position:absolute;z-index:1;background:var(--ear,#8a70e0);border:2px solid var(--rim,#cfc5ff);box-shadow:inset -3px -4px 7px rgba(30,20,70,.2)}.ear::after{content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:#55cfff;box-shadow:0 0 8px #55cfff}
+  .long .ear{top:0;width:20px;height:49px;border-radius:55% 45% 25% 30%}.long .l{left:13px;transform:rotate(-9deg)}.long .r{right:13px;transform:rotate(9deg)}.long .ear::after{left:5px;top:5px}
+  .tri .ear{top:11px;width:29px;height:34px;clip-path:polygon(50% 0,100% 100%,0 82%)}.tri .l{left:5px;transform:rotate(-10deg)}.tri .r{right:5px;transform:scaleX(-1) rotate(-10deg)}.tri .ear::after{left:11px;top:7px}
+  .round .ear{top:17px;width:30px;height:30px;border-radius:50%}.round .l{left:2px}.round .r{right:2px}.round .ear::after{left:10px;top:4px}
+  .flop .ear{top:15px;width:22px;height:50px;border-radius:50% 45% 62% 38%}.flop .l{left:2px;transform:rotate(24deg)}.flop .r{right:2px;transform:rotate(-24deg)}.flop .ear::after{left:7px;top:5px}
+  .antenna .ear{top:4px;width:10px;height:45px;border-radius:50%}.antenna .l{left:19px;transform:rotate(-28deg)}.antenna .r{right:19px;transform:rotate(28deg)}.antenna .ear::after{left:0;top:-5px;width:10px;height:10px}
+  .crescent .ear{top:7px;width:31px;height:44px;border-radius:50%;background:transparent;box-shadow:-8px 0 0 var(--ear,#8a70e0)}.crescent .l{left:5px;transform:rotate(-19deg)}.crescent .r{right:5px;transform:scaleX(-1) rotate(-19deg)}.crescent .ear::after{left:-3px;top:2px}
+  .fin .ear{top:10px;width:32px;height:38px;clip-path:polygon(0 46%,100% 0,72% 100%);border:none}.fin .l{left:1px;transform:rotate(-18deg)}.fin .r{right:1px;transform:scaleX(-1) rotate(-18deg)}.fin .ear::after{left:9px;top:7px}
+  .asym .l{left:8px;top:0;width:18px;height:49px;border-radius:60% 40% 20% 30%;transform:rotate(-12deg)}.asym .r{right:2px;top:13px;width:32px;height:31px;border-radius:50%}.asym .ear::after{left:6px;top:5px}
+  .hybrid .ear{border-width:3px}.hybrid .ear:before{content:"";position:absolute;inset:5px;border-radius:inherit;border:1px solid rgba(255,255,255,.24)}.hybrid .mini:nth-child(2){--ear:#e59b78;--rim:#ffd3bb}.hybrid .mini:nth-child(3){--ear:#d28bb2;--rim:#f5c4dd}.hybrid .mini:nth-child(4){--ear:#7ca89f;--rim:#bfe1d8}
+  .hybrid .tri .ear{clip-path:polygon(50% 0,100% 100%,0 82%)}.hybrid .flop .ear{height:45px}.hybrid .round .ear{border-radius:48% 52% 45% 55%}
+  .copy{padding:18px 19px 21px}.copy h3{margin:0 0 9px;font-size:19px}.copy p{margin:0 0 14px;min-height:82px;color:#aaa3b7;font-size:12px;line-height:1.65}.rule{padding:10px 11px;border-radius:10px;background:rgba(255,255,255,.05);color:#c9c2d4;font-size:11px;line-height:1.55}.foot{margin-top:19px;color:#a79eaf;font-size:12px;line-height:1.65}@media(max-width:900px){.ear-grid{grid-template-columns:1fr}.ear-card{min-height:auto}.copy p{min-height:auto}}
+</style>
+
+<section class="ear-page">
+  <div class="label">系列语法 02 · 耳朵来源</div>
+  <h2>同一张空白月面，耳朵决定“它是谁”</h2>
+  <p class="subtitle">所有示例都遵守已确认规则：脸完全空白；耳朵本色不被状态覆盖；蓝色耳尖光只代表当前状态信号。</p>
+  <div class="ear-grid">
+    <article class="ear-card" data-choice="A 直观动物" onclick="toggleSelect(this)">
+      <div class="lineup animal">
+        <div class="mini long"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini tri" style="--ear:#e2a06e;--rim:#ffd3ae"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini round" style="--ear:#d68fb7;--rim:#f9c6df"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini flop" style="--ear:#7ba79c;--rim:#bde0d6"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div>
+      </div>
+      <div class="copy"><h3>A · 直观动物</h3><p>兔、猫、熊、垂耳犬的轮廓几乎原样使用。角色一眼可懂，也容易赋予性格。</p><div class="rule">风险：最容易退回“同一圆脸换动物耳朵”，与上一版失败方案接近。</div></div>
+    </article>
+    <article class="ear-card" data-choice="B 抽象器官" onclick="toggleSelect(this)">
+      <div class="lineup abstract">
+        <div class="mini antenna"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini crescent" style="--ear:#e59b78"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini fin" style="--ear:#d28bb2"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini asym" style="--ear:#7ca89f"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div>
+      </div>
+      <div class="copy"><h3>B · 抽象器官</h3><p>耳朵来自月牙、天线、声波、鳍和不对称几何，不对应具体动物，原创性最高。</p><div class="rule">风险：可能更像外星装置而不是“宠物”，角色性格需要额外解释。</div></div>
+    </article>
+    <article class="ear-card hybrid" data-choice="C 月化物种" onclick="toggleSelect(this)">
+      <span class="tag">推荐</span>
+      <div class="lineup">
+        <div class="mini long"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini tri"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini round"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div><div class="mini flop"><i class="ear l"></i><i class="ear r"></i><i class="disc"></i></div>
+      </div>
+      <div class="copy"><h3>C · 月化物种</h3><p>保留动物耳朵的远亲轮廓，但统一改造成厚实的“月生器官”：相同根部、双层轮廓、内侧月纹和耳尖信号灯。</p><div class="rule">既能看出性格来源，又不会被直接叫成兔子或猫；适合长期扩展为收藏系列。</div></div>
+    </article>
+  </div>
+  <p class="foot">点击最接近的方向。选择 C 后，下一步会把“月化规则”具体化，再设计首批角色，而不是简单复制这些示意耳朵。</p>
+</section>

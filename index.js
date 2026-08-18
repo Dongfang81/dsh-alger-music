@@ -190,6 +190,60 @@ function buildActions(cfg, client, shared) {
 			return { ok: true, text };
 		},
 
+		/** alger_recommend：随机推荐播放（不知道听什么时用） */
+		async recommend() {
+			const steps = [];
+			const log = (s) => steps.push(String(s));
+			if (!(await client.cdpUp())) {
+				const running = await client.appRunning();
+				return {
+					ok: false,
+					steps: [...steps, `CDP 点歌通道（${cfg.cdpPort}）不可用`, `App 运行中: ${running ? '是' : '否'}`],
+					guidance: running
+						? `App 未带调试端口启动。请调用 alger_setup action=relaunch 后重试。`
+						: `App 未运行。请调用 alger_setup action=relaunch 启动后重试。`
+				};
+			}
+			// 1) 从 App 音乐 API 拉推荐/热门候选，随机挑一首
+			let songs = [];
+			try {
+				const data = await client.getJson(`${client.apiBase}/personalized/newsong?limit=30`);
+				const list = data?.result || [];
+				songs = list
+					.map((i) => i?.song || i)
+					.filter((s) => s && s.id && s.name);
+			} catch {
+				/* 降级到热门榜 */
+			}
+			if (songs.length === 0) {
+				try {
+					const data = await client.getJson(`${client.apiBase}/top/song?limit=30`);
+					songs = (data?.data || []).filter((s) => s && s.id && s.name);
+				} catch {
+					/* 忽略 */
+				}
+			}
+			if (songs.length === 0) {
+				return { ok: false, steps: [...steps, '推荐接口无结果'], guidance: '请稍后再试，或直接搜索点歌。' };
+			}
+			const song = songs[Math.floor(Math.random() * songs.length)];
+			const artists = (song.ar || song.artists || []).map((a) => a.name).join('/');
+			log(`随机命中: [${song.id}] ${song.name}${artists ? ' - ' + artists : ''}`);
+
+			// 2) CDP 播放（与 alger_play 同路径）
+			const script = buildPlayScript(song.name || '', song);
+			let out;
+			try {
+				out = await cdpEvaluate(cfg.cdpPort, script, { timeoutMs: cfg.timeoutMs });
+			} catch (error) {
+				return { ok: false, steps: [...steps, `CDP 执行失败: ${error.message}`], guidance: '可尝试 alger_setup action=relaunch 后重试。' };
+			}
+			steps.push(...(out?.steps || []));
+			if (!out?.ok) return { ok: false, steps, guidance: out?.error || '随机推荐播放失败' };
+			shared.setNotice('🎲 随机播放：' + song.name);
+			return { ok: true, steps, playedName: song.name, playedId: song.id };
+		},
+
 		/** alger_setup */
 		async setup(args) {
 			const action = String(args?.action ?? 'check');
@@ -960,7 +1014,26 @@ function buildTools(cfg, actions) {
 		timeoutMs: cfg.timeoutMs
 	};
 
-	return [status, setup, install, search, song, playlist, play, queue, control, say];
+	const recommend = {
+		name: 'alger_recommend',
+		description:
+			'随机推荐播放：不知道听什么时，从 App 音乐 API 的推荐/热门歌曲中随机挑一首立即播放（走 CDP，与 alger_play 同路径）。',
+		parameters: compileParameters({}),
+		output: {
+			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+			render: (_args, value) => {
+				const rec = asRecord(value);
+				const lines = (rec.steps || []).map((s) => '· ' + s);
+				if (rec.ok) lines.push('🎲 随机播放：' + (rec.playedName || ''));
+				if (rec.guidance) lines.push('提示: ' + rec.guidance);
+				return lines;
+			}
+		},
+		execute: () => actions.recommend(),
+		timeoutMs: Math.max(cfg.timeoutMs, 45000)
+	};
+
+	return [status, setup, install, search, song, playlist, play, queue, control, say, recommend];
 }
 
 /** 读取 POST body（JSON 文本）。 */
@@ -1000,8 +1073,7 @@ function registerRoutes(webServer, actions) {
 		},
 		{
 			kind: 'exact',
-			path: '/dsh-alger/command',
-			handler: async (req, res) => {
+			path: '/dsh-alger/command',			handler: async (req, res) => {
 				try {
 					const body = JSON.parse((await readBody(req)) || '{}');
 					json(res, await actions.control(body));
@@ -1017,6 +1089,17 @@ function registerRoutes(webServer, actions) {
 				try {
 					const body = JSON.parse((await readBody(req)) || '{}');
 					json(res, await actions.say(body));
+				} catch (error) {
+					json(res, { ok: false, error: String((error && error.message) || error) });
+				}
+			}
+		},
+		{
+			kind: 'exact',
+			path: '/dsh-alger/recommend',
+			handler: async (_req, res) => {
+				try {
+					json(res, await actions.recommend());
 				} catch (error) {
 					json(res, { ok: false, error: String((error && error.message) || error) });
 				}
