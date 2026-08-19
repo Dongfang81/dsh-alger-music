@@ -44,9 +44,89 @@ window.__ModuleLoader__.load({
 			Object.freeze({ id: "hush", name: "Moony · Hush", role: "安静陪伴者", ear: "hush", tail: "none", motion: "hush", colors: Object.freeze({ ear: "#647654", highlight: "#B9C5A6", rim: "#DBE3CE" }) })
 		]);
 		var MOONY_BY_ID = Object.freeze(MOONY_CATALOG.reduce(function (out, pet) { out[pet.id] = pet; return out; }, {}));
+		var MOONY_SOFT_GLOW_EARS = Object.freeze({ pulse: true, echo: true, hush: true });
 
 		function getMoony(id) {
 			return typeof id === "string" && Object.prototype.hasOwnProperty.call(MOONY_BY_ID, id) ? MOONY_BY_ID[id] : MOONY_BY_ID.classic;
+		}
+
+		function normalizeHexColor(value) {
+			var match = typeof value === "string" ? value.trim().match(/^#([0-9a-f]{6})$/i) : null;
+			return match ? "#" + match[1].toUpperCase() : null;
+		}
+
+		function colorWithAlpha(value, alpha) {
+			var hex = normalizeHexColor(value);
+			if (!hex) return "rgba(255, 255, 255, " + alpha + ")";
+			return "rgba(" + parseInt(hex.slice(1, 3), 16) + ", " + parseInt(hex.slice(3, 5), 16) + ", " + parseInt(hex.slice(5, 7), 16) + ", " + alpha + ")";
+		}
+
+		function dominantColorFromPixels(data) {
+			if (!data || typeof data.length !== "number") return null;
+			var buckets = Object.create(null);
+			for (var i = 0; i + 3 < data.length; i += 4) {
+				var alpha = Number(data[i + 3]);
+				if (alpha < 128) continue;
+				var r = Number(data[i]);
+				var g = Number(data[i + 1]);
+				var b = Number(data[i + 2]);
+				var key = (r >> 4) + ":" + (g >> 4) + ":" + (b >> 4);
+				var bucket = buckets[key] || (buckets[key] = { count: 0, r: 0, g: 0, b: 0 });
+				bucket.count += 1;
+				bucket.r += r;
+				bucket.g += g;
+				bucket.b += b;
+			}
+			var winner = null;
+			Object.keys(buckets).forEach(function (key) {
+				if (!winner || buckets[key].count > winner.count) winner = buckets[key];
+			});
+			if (!winner) return null;
+			var hex = function (number) { return Math.round(number / winner.count).toString(16).padStart(2, "0").toUpperCase(); };
+			return "#" + hex(winner.r) + hex(winner.g) + hex(winner.b);
+		}
+
+		function extractAmbientColor(url) {
+			return new Promise(function (resolve) {
+				if (typeof url !== "string" || !url.trim() || typeof Image !== "function") { resolve(null); return; }
+				var settled = false;
+				var timer = null;
+				var finish = function (color) {
+					if (settled) return;
+					settled = true;
+					if (timer) clearTimeout(timer);
+					resolve(color || null);
+				};
+				var image = new Image();
+				image.crossOrigin = "anonymous";
+				image.decoding = "async";
+				image.onload = function () {
+					try {
+						var canvas = document.createElement("canvas");
+						canvas.width = 16;
+						canvas.height = 16;
+						var context = canvas.getContext("2d", { willReadFrequently: true });
+						if (!context) { finish(null); return; }
+						context.drawImage(image, 0, 0, 16, 16);
+						finish(dominantColorFromPixels(context.getImageData(0, 0, 16, 16).data));
+					} catch { finish(null); }
+				};
+				image.onerror = function () { finish(null); };
+				timer = setTimeout(function () { finish(null); }, 5000);
+				image.src = url.trim();
+			});
+		}
+
+		function resolveMoonyLight(pet, status, isPlaying, ambientColor) {
+			if (status !== "idle") return MOONY_STATUS[status].signal;
+			return isPlaying ? (normalizeHexColor(ambientColor) || pet.colors.rim) : pet.colors.rim;
+		}
+
+		function MoonySoftHalos() {
+			return h("span", { key: "soft-halos", className: "dsa-moony-soft-halos", "aria-hidden": true }, [
+				h("i", { key: "left", className: "dsa-moony-soft-halo left" }),
+				h("i", { key: "right", className: "dsa-moony-soft-halo right" })
+			]);
 		}
 
 		function getLocalStorage() {
@@ -67,7 +147,11 @@ window.__ModuleLoader__.load({
 
 		function MoonyThumbnail(props) {
 			var pet = getMoony(props && props.petId);
-			var style = { "--moony-ear": pet.colors.ear, "--moony-ear-highlight": pet.colors.highlight, "--moony-rim": pet.colors.rim, "--moony-signal": "transparent" };
+			var style = {
+				"--moony-ear": pet.colors.ear, "--moony-ear-highlight": pet.colors.highlight,
+				"--moony-rim": pet.colors.rim, "--moony-rim-soft": colorWithAlpha(pet.colors.rim, .58),
+				"--moony-light": pet.colors.rim, "--moony-light-soft": colorWithAlpha(pet.colors.rim, .72), "--moony-signal": "transparent"
+			};
 			return h("span", { className: "dsa-moony-thumb", "aria-hidden": true }, h("span", {
 				className: "dsa-moony-pet", "data-moony-id": pet.id, "data-moony-ear": pet.ear, "data-moony-motion": pet.motion, style: style
 			}, h("span", { className: "dsa-moony-rhythm" }, [
@@ -106,8 +190,16 @@ window.__ModuleLoader__.load({
 			var input = props && typeof props === "object" ? props : {};
 			var value = resolveMoonyState({ petId: input.petId, agentStatus: input.agentStatus, mediaUrl: input.mediaUrl });
 			var pet = value.pet;
-			var style = { "--moony-ear": pet.colors.ear, "--moony-ear-highlight": pet.colors.highlight, "--moony-rim": pet.colors.rim, "--moony-signal": MOONY_STATUS[value.status].signal };
+			var softGlow = Object.prototype.hasOwnProperty.call(MOONY_SOFT_GLOW_EARS, pet.ear);
+			var light = resolveMoonyLight(pet, value.status, Boolean(input.isPlaying), input.ambientColor);
+			var style = {
+				"--moony-ear": pet.colors.ear, "--moony-ear-highlight": pet.colors.highlight,
+				"--moony-rim": pet.colors.rim, "--moony-rim-soft": colorWithAlpha(pet.colors.rim, .58),
+				"--moony-light": light, "--moony-light-soft": colorWithAlpha(light, .72),
+				"--moony-signal": MOONY_STATUS[value.status].signal
+			};
 			var parts = [
+				softGlow ? MoonySoftHalos() : null,
 				pet.tail !== "none" ? h("span", { key: "tail", className: "dsa-moony-tail", "data-moony-tail": pet.tail }) : null,
 				h("span", { key: "left", className: "dsa-moony-ear left" }, h("i", { className: "dsa-moony-signal" })),
 				h("span", { key: "right", className: "dsa-moony-ear right" }, h("i", { className: "dsa-moony-signal" })),
@@ -115,7 +207,8 @@ window.__ModuleLoader__.load({
 			];
 			return h("div", {
 				className: "dsa-pet dsa-moony-pet" + (input.isPlaying ? " singing" : "") + " dsa-agent-" + value.status,
-				"data-moony-id": pet.id, "data-moony-ear": pet.ear, "data-moony-motion": pet.motion, style: style,
+				"data-moony-id": pet.id, "data-moony-ear": pet.ear, "data-moony-motion": pet.motion,
+				"data-moony-soft-glow": softGlow ? true : undefined, style: style,
 				title: input.title || pet.name, onPointerDown: input.onPointerDown, onClick: input.onClick
 			}, h("span", { className: "dsa-moony-rhythm" }, parts));
 		}
@@ -190,12 +283,11 @@ window.__ModuleLoader__.load({
 			".dsa-pet{position:relative;width:64px;height:64px;cursor:grab;overflow:visible;user-select:none}",
 			".dsa-moony-thumb{position:relative;display:block;flex:none;width:30px;height:30px;overflow:visible}.dsa-moony-thumb>.dsa-moony-pet{position:relative;display:block;width:64px;height:64px;transform:scale(.42);transform-origin:2px 2px;pointer-events:none}.dsa-moony-thumb .dsa-moony-rhythm,.dsa-moony-thumb .dsa-moony-ear,.dsa-moony-thumb [data-moony-tail]{animation:none!important}",
 			".dsa-pet:active{cursor:grabbing}.dsa-moony-rhythm{position:absolute;inset:0;display:block}",
-			".dsa-moony-pet[data-moony-motion='float'].singing{--moony-beat:.86s}.dsa-moony-pet[data-moony-motion='beat'].singing{--moony-beat:.44s}.dsa-moony-pet[data-moony-motion='orbit'].singing{--moony-beat:1.6s}.dsa-moony-pet[data-moony-motion='drift'].singing{--moony-beat:1.35s}.dsa-moony-pet[data-moony-motion='scan'].singing{--moony-beat:.72s}.dsa-moony-pet[data-moony-motion='chorus'].singing{--moony-beat:.62s}.dsa-moony-pet[data-moony-motion='hush'].singing{--moony-beat:1.8s}",
-			".dsa-moony-pet[data-moony-motion='float'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-float .86s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='beat'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-beat .44s cubic-bezier(.4,0,.2,1) infinite alternate}.dsa-moony-pet[data-moony-motion='orbit'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-orbit 1.6s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='drift'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-drift 1.35s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-scan .72s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-chorus .62s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-hush 1.8s ease-in-out infinite alternate}",
 			".dsa-moony-face{position:absolute;inset:0;z-index:2;display:block;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,.9);background:linear-gradient(145deg,#f5f2f8 4%,#d6cfdf 58%,#aaa1b9);box-shadow:inset 4px 5px 8px rgba(255,255,255,.58),inset -6px -7px 11px rgba(55,40,76,.14),0 8px 18px rgba(0,0,0,.34)}",
 			".dsa-moony-face img{width:100%;height:100%;display:block;object-fit:cover}",
-			".dsa-moony-ear{position:absolute;z-index:3;display:block;background:linear-gradient(145deg,var(--moony-ear-highlight),var(--moony-ear));border:3px solid var(--moony-rim);box-shadow:inset 3px 3px 6px rgba(255,255,255,.2),inset -4px -5px 7px rgba(30,18,60,.18),0 5px 9px rgba(0,0,0,.2);transform-origin:50% 90%}",
-			".dsa-moony-ear::before{content:'';position:absolute;inset:7px;border:1px solid rgba(255,255,255,.18);border-radius:inherit}",
+			".dsa-moony-ear{position:absolute;z-index:3;display:block;background:linear-gradient(145deg,var(--moony-ear-highlight),var(--moony-ear));border:3px solid var(--moony-rim);box-shadow:inset 3px 3px 6px rgba(255,255,255,.2),inset -4px -5px 7px rgba(30,18,60,.18),0 0 9px var(--moony-rim-soft),0 5px 9px rgba(0,0,0,.2);filter:drop-shadow(0 0 5px var(--moony-light-soft));transform-origin:50% 90%;transition:border-color .35s,filter .35s,box-shadow .35s}",
+			".dsa-moony-ear::before{content:'';position:absolute;inset:6px;border:1px solid var(--moony-light-soft);border-radius:inherit;background:radial-gradient(circle at 35% 28%,var(--moony-light-soft),transparent 72%);box-shadow:inset 0 0 8px var(--moony-light-soft);transition:background .5s,border-color .5s,box-shadow .5s}",
+			".dsa-moony-soft-halos{position:absolute;inset:0;z-index:2;display:block;pointer-events:none}.dsa-moony-soft-halo{position:absolute;display:block;border-radius:50%;background:var(--moony-light-soft);filter:blur(7px);opacity:.82;transform-origin:50% 90%;transition:background .5s}",
 			".dsa-moony-signal{position:absolute;z-index:4;right:6px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--moony-signal);box-shadow:0 0 8px var(--moony-signal)}",
 			".dsa-moony-pet[data-moony-ear='classic'] .dsa-moony-ear{top:-12px;width:22px;height:22px;border-radius:55% 45% 25% 30%}.dsa-moony-pet[data-moony-ear='classic'] .left{left:3px}.dsa-moony-pet[data-moony-ear='classic'] .right{right:3px}",
 			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-ear{top:-28px;width:27px;height:48px;border-radius:59% 41% 20% 30%;clip-path:polygon(0 0,100% 8%,72% 100%,48% 66%,25% 100%)}.dsa-moony-pet[data-moony-ear='pulse'] .left{left:1px;transform:rotate(-12deg)}.dsa-moony-pet[data-moony-ear='pulse'] .right{right:1px;transform:scaleX(-1) rotate(-12deg)}",
@@ -204,21 +296,34 @@ window.__ModuleLoader__.load({
 			".dsa-moony-pet[data-moony-ear='spark'] .left{left:5px;top:-31px;width:19px;height:50px;border-radius:60% 40% 18% 28%;transform:rotate(-23deg)}.dsa-moony-pet[data-moony-ear='spark'] .right{right:-7px;top:-12px;width:37px;height:29px;border-radius:70% 30% 55% 45%;transform:rotate(8deg)}",
 			".dsa-moony-pet[data-moony-ear='chorus'] .dsa-moony-ear{top:-23px;width:39px;height:40px;clip-path:polygon(50% 0,65% 39%,100% 20%,76% 60%,98% 84%,56% 75%,40% 100%,29% 68%,0 75%,25% 47%)}.dsa-moony-pet[data-moony-ear='chorus'] .left{left:-7px;transform:rotate(-9deg)}.dsa-moony-pet[data-moony-ear='chorus'] .right{right:-7px;transform:scaleX(-1) rotate(-9deg)}",
 			".dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-ear{top:-28px;width:37px;height:32px;border-radius:70% 30% 62% 38%;clip-path:polygon(0 10%,100% 0,78% 100%,18% 85%)}.dsa-moony-pet[data-moony-ear='hush'] .left{left:-9px;transform:rotate(-22deg)}.dsa-moony-pet[data-moony-ear='hush'] .right{right:-9px;transform:scaleX(-1) rotate(-22deg)}",
-			".dsa-moony-tail{position:absolute;z-index:1;pointer-events:none}.dsa-moony-tail[data-moony-tail='orbit']{right:-8px;bottom:-5px;width:38px;height:32px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(25deg)}",
+			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-soft-halo{top:-25px;width:27px;height:45px}.dsa-moony-pet[data-moony-ear='echo'] .dsa-moony-soft-halo{top:-16px;width:39px;height:31px}.dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-soft-halo{top:-26px;width:37px;height:30px}",
+			".dsa-moony-tail{position:absolute;z-index:1;pointer-events:none;filter:drop-shadow(0 0 6px var(--moony-light-soft));transition:filter .5s}.dsa-moony-tail[data-moony-tail='orbit']{right:-8px;bottom:-5px;width:38px;height:32px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(25deg)}",
 			".dsa-moony-tail[data-moony-tail='comet']{right:-17px;bottom:5px;width:42px;height:17px;border-radius:70% 30% 70% 30%;background:linear-gradient(90deg,var(--moony-ear-highlight),var(--moony-ear));transform:rotate(24deg)}",
 			".dsa-moony-tail[data-moony-tail='curl']{right:-7px;bottom:-6px;width:31px;height:31px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(12deg)}",
 			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='float'] .dsa-moony-ear{animation:dsa-moony-idle-float 3.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='beat'] .dsa-moony-ear{animation:dsa-moony-idle-beat 1.15s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-ear{animation:dsa-moony-idle-orbit 3.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-ear{animation:dsa-moony-idle-drift 4.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='scan'] .dsa-moony-ear{animation:dsa-moony-idle-scan 2.1s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-ear{animation:dsa-moony-idle-chorus 2.7s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='hush'] .dsa-moony-ear{animation:dsa-moony-idle-hush 5s ease-in-out infinite alternate}",
 			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-tail{animation:dsa-moony-idle-tail-orbit 2.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-tail{animation:dsa-moony-idle-tail-drift 3.6s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-tail{animation:dsa-moony-idle-tail-chorus 1.4s ease-in-out infinite alternate}",
 			".dsa-agent-running .dsa-moony-ear,.dsa-agent-waiting .dsa-moony-ear,.dsa-agent-failed .dsa-moony-ear,.dsa-agent-review .dsa-moony-ear{border-color:var(--moony-signal);filter:drop-shadow(0 0 5px var(--moony-signal))}",
+			".dsa-moony-pet[data-moony-soft-glow='true'] .dsa-moony-ear{filter:none}",
 			".dsa-agent-running .dsa-moony-ear{animation:dsa-moony-running .52s ease-in-out infinite alternate}.dsa-agent-running .dsa-moony-ear.right{animation-direction:alternate-reverse}.dsa-agent-waiting .dsa-moony-ear{animation:dsa-moony-waiting 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-ear{animation:dsa-moony-failed .24s linear 3}.dsa-agent-review .dsa-moony-ear{animation:dsa-moony-review 1s ease-in-out infinite alternate}",
 			".dsa-agent-running .dsa-moony-tail{animation:dsa-moony-tail-sway .52s ease-in-out infinite alternate}.dsa-agent-waiting .dsa-moony-tail{animation:dsa-moony-tail-listen 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-tail{animation:dsa-moony-tail-failed .24s linear 3}.dsa-agent-review .dsa-moony-tail{animation:dsa-moony-tail-review 1s ease-in-out infinite alternate}",
-			".dsa-moony-pet.singing[data-moony-motion] .dsa-moony-ear{animation:dsa-moony-music-ear var(--moony-beat,.8s) ease-in-out infinite alternate}.dsa-moony-pet.singing[data-moony-motion] .dsa-moony-ear.right{animation-direction:alternate-reverse}.dsa-moony-pet.singing[data-moony-motion] .dsa-moony-tail{animation:dsa-moony-music-tail var(--moony-beat,.8s) ease-in-out infinite alternate}",
-			"@keyframes dsa-moony-listen-float{from{translate:0 0}to{translate:0 -3px}}@keyframes dsa-moony-listen-beat{from{translate:0 0;scale:1}to{translate:0 -3px;scale:1.025}}@keyframes dsa-moony-listen-orbit{0%,100%{rotate:-1.5deg}50%{rotate:1.5deg}}@keyframes dsa-moony-listen-drift{from{translate:-1px 1px}to{translate:1px -3px}}@keyframes dsa-moony-listen-scan{from{rotate:-1deg}to{rotate:2deg}}@keyframes dsa-moony-listen-chorus{from{translate:0 0;scale:1}to{translate:0 -4px;scale:1.02}}@keyframes dsa-moony-listen-hush{from{translate:0 0}to{translate:0 -1px}}",
-			"@keyframes dsa-moony-music-ear{from{rotate:-6deg;translate:0 0}to{rotate:6deg;translate:0 -2px}}@keyframes dsa-moony-music-tail{from{rotate:-5deg;translate:0 1px}to{rotate:7deg;translate:0 -2px}}",
+			".dsa-moony-pet[data-moony-motion='float'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-classic-body 1.6s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='float'].singing .dsa-moony-ear{animation:dsa-moony-dance-classic-ear .8s cubic-bezier(.45,0,.55,1) infinite}",
+			".dsa-moony-pet[data-moony-motion='beat'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-pulse-body .72s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='beat'].singing .dsa-moony-ear{animation:dsa-moony-dance-pulse-ear .36s cubic-bezier(.2,.85,.35,1) infinite alternate}.dsa-moony-pet[data-moony-motion='beat'].singing .dsa-moony-ear.right{animation-delay:-.36s}",
+			".dsa-moony-pet[data-moony-motion='orbit'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-echo-body 1.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='orbit'].singing .dsa-moony-ear{animation:dsa-moony-dance-echo-ear 1.4s cubic-bezier(.2,.75,.35,1) infinite}.dsa-moony-pet[data-moony-motion='orbit'].singing .dsa-moony-ear.left{animation-delay:-.36s}.dsa-moony-pet[data-moony-motion='orbit'].singing .dsa-moony-ear.right{animation-delay:-.18s}.dsa-moony-pet[data-moony-motion='orbit'].singing .dsa-moony-tail{animation:dsa-moony-dance-echo-tail 1.4s cubic-bezier(.2,.75,.35,1) infinite}",
+			".dsa-moony-pet[data-moony-motion='drift'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-drift-body 3.6s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='drift'].singing .dsa-moony-ear{animation:dsa-moony-dance-drift-ear 3.2s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='drift'].singing .dsa-moony-ear.right{animation-delay:-1.6s}.dsa-moony-pet[data-moony-motion='drift'].singing .dsa-moony-tail{animation:dsa-moony-dance-drift-tail 3.8s cubic-bezier(.22,.8,.32,1) infinite}",
+			".dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-spark-body 2.4s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-ear{animation:dsa-moony-dance-spark-ear 2.4s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-ear::after{content:'';position:absolute;left:50%;top:-5px;width:9px;height:9px;border-radius:50%;background:var(--moony-rim);box-shadow:0 0 5px var(--moony-rim),0 0 14px var(--moony-rim),0 0 24px var(--moony-light-soft);translate:-50% 0;opacity:0;pointer-events:none;animation:dsa-moony-dance-spark-flash 2.4s linear infinite}",
+			".dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-chorus-body 4.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-ear{animation:dsa-moony-dance-chorus-ear 4.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-ear.right{animation-delay:-.18s}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-tail{animation:dsa-moony-dance-chorus-tail 4.8s ease-in-out infinite}",
+			".dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-hush-body 4.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-ear{animation:dsa-moony-dance-hush-ear 4.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-ear.right{animation-delay:-2.4s}",
+			"@keyframes dsa-moony-dance-classic-body{0%,100%{translate:0 0}25%{translate:0 -1px}50%{translate:0 0}75%{translate:0 -2px}}@keyframes dsa-moony-dance-classic-ear{0%,100%{rotate:-2deg;translate:0 0}50%{rotate:2deg;translate:0 -2px}}",
+			"@keyframes dsa-moony-dance-pulse-body{0%,100%{translate:0 0;scale:1}50%{translate:0 -2px;scale:1.015}}@keyframes dsa-moony-dance-pulse-ear{from{rotate:-5deg;translate:0 3px;scale:.97 1}to{rotate:6deg;translate:0 -5px;scale:1 1.04}}",
+			"@keyframes dsa-moony-dance-echo-body{0%,100%{translate:0 0}35%{translate:-1px -1px}70%{translate:1px -2px}}@keyframes dsa-moony-dance-echo-ear{0%,18%,100%{rotate:-3deg;translate:0 1px}38%{rotate:7deg;translate:0 -4px}58%{rotate:1deg;translate:0 -1px}}@keyframes dsa-moony-dance-echo-tail{0%,18%,100%{rotate:-6deg;translate:0 1px}38%{rotate:8deg;translate:1px -2px}58%{rotate:2deg;translate:0 0}}",
+			"@keyframes dsa-moony-dance-drift-body{0%,100%{translate:-1px 1px;rotate:-1deg}50%{translate:2px -4px;rotate:1.5deg}}@keyframes dsa-moony-dance-drift-ear{0%,100%{rotate:-3deg;translate:0 1px}50%{rotate:4deg;translate:1px -2px}}@keyframes dsa-moony-dance-drift-tail{0%,100%{rotate:-7deg;translate:-1px 2px}58%{rotate:11deg;translate:3px -3px}76%{rotate:6deg;translate:2px -1px}}",
+			"@keyframes dsa-moony-dance-spark-body{0%,100%{translate:0 0;scale:1}4%{translate:0 -3px;scale:1.025}10%{translate:0 0;scale:1}52%{translate:0 -1px}}@keyframes dsa-moony-dance-spark-ear{0%,100%{rotate:-2deg;translate:0 0}4%{rotate:7deg;translate:0 -4px}10%{rotate:0;translate:0 -1px}52%{rotate:2deg;translate:0 -2px}}@keyframes dsa-moony-dance-spark-flash{0%,3%,10%,100%{opacity:0;scale:.4}4%,7%{opacity:1;scale:1.35}}",
+			"@keyframes dsa-moony-dance-chorus-body{0%,25%,50%,100%{translate:0 0;scale:1}12.5%,37.5%{translate:0 -2px;scale:1.01}62.5%,87.5%{translate:0 -5px;scale:1.035}75%{translate:0 1px;scale:1.01}}@keyframes dsa-moony-dance-chorus-ear{0%,25%,50%,100%{rotate:-3deg;translate:0 0}12.5%,37.5%{rotate:4deg;translate:0 -2px}62.5%,87.5%{rotate:10deg;translate:0 -6px}75%{rotate:-7deg;translate:0 1px}}@keyframes dsa-moony-dance-chorus-tail{0%,25%,50%,100%{rotate:-5deg;translate:0 1px}12.5%,37.5%{rotate:5deg;translate:0 -1px}62.5%{rotate:13deg;translate:2px -3px}75%{rotate:-10deg;translate:-1px 2px}87.5%{rotate:10deg;translate:1px -3px}}",
+			"@keyframes dsa-moony-dance-hush-body{0%,100%{translate:0 0;scale:1}50%{translate:0 -1px;scale:1.012}}@keyframes dsa-moony-dance-hush-ear{0%,100%{rotate:-1deg;translate:0 0;scale:1}50%{rotate:1deg;translate:0 -1px;scale:1.01}}",
 			"@keyframes dsa-moony-idle-float{from{rotate:-2deg}to{rotate:2deg}}@keyframes dsa-moony-idle-beat{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-orbit{from{rotate:-2deg}to{rotate:3deg}}@keyframes dsa-moony-idle-drift{from{translate:0 0}to{translate:0 2px}}@keyframes dsa-moony-idle-scan{from{rotate:-1deg}to{rotate:3deg}}@keyframes dsa-moony-idle-chorus{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-hush{from{scale:1}to{scale:.98}}@keyframes dsa-moony-idle-tail-orbit{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-idle-tail-drift{from{translate:0 0}to{translate:1px -2px}}@keyframes dsa-moony-idle-tail-chorus{from{rotate:-2deg}to{rotate:5deg}}",
 			"@keyframes dsa-moony-running{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-waiting{0%,100%{translate:-1px 0}50%{translate:2px 1px}}@keyframes dsa-moony-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-review{from{translate:0 0}to{translate:0 -3px}}",
 			"@keyframes dsa-moony-tail-sway{from{rotate:-5deg}to{rotate:7deg}}@keyframes dsa-moony-tail-listen{0%,100%{translate:0 0}50%{translate:0 -2px}}@keyframes dsa-moony-tail-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-tail-review{from{translate:0 0}to{translate:0 -2px}}",
-			"@media (prefers-reduced-motion:reduce){.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-tail{animation:none!important}}"
+			"@media (prefers-reduced-motion:reduce){.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-ear::after,.dsa-moony-tail{animation:none!important}}"
 		].join("\n");
 		var CSS = [
 			"#dsh-alger-root{position:fixed;left:0;top:0;z-index:2147483000;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;user-select:none;color:#fff}",
@@ -443,6 +548,8 @@ window.__ModuleLoader__.load({
 		/* ---------- 浮动播放器 ---------- */
 		function MusicPlayer() {
 			var [state, setState] = React.useState(null);
+			var stateRef = React.useRef(null); // 供 audio 事件回调读取最新状态（避免闭包过期）
+			stateRef.current = state;
 			var [petId, setPetId] = React.useState(function () { return readStoredMoonyId(getLocalStorage()); });
 			var selectMoony = function (id) { setPetId(writeStoredMoonyId(getLocalStorage(), id)); };
 			// 默认宠物形态（收起）：每次打开先看到宠物，点击才切换播放器
@@ -467,6 +574,7 @@ window.__ModuleLoader__.load({
 			var [busy, setBusy] = React.useState(false);
 			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
 			var [artistInfo, setArtistInfo] = React.useState(null); // {id, avatar}
+			var [ambientColor, setAmbientColor] = React.useState(null); // 当前唱片取色；失败时由角色本色回退
 			var noticeTimer = React.useRef(null);
 			var lrcFor = React.useRef(null); // 已取歌词的 songId
 			var artistFor = React.useRef(null); // 已取头像的 artistId
@@ -517,8 +625,20 @@ window.__ModuleLoader__.load({
 				audio.addEventListener("error", function () {
 					reportPlayback({ playing: false, position: 0, duration: audio.duration || 0, ready: true });
 				});
+				// 多页面防串音：页面隐藏时暂停本地音频（不改变服务端状态），
+				// 只有当前可见的页面出声；回到可见且服务端在播时恢复。
+				var onVisibility = function () {
+					if (document.hidden) {
+						if (!audio.paused) audio.pause();
+					} else if (audio.src && stateRef.current && stateRef.current.playing && stateRef.current.playing.isPlaying) {
+						var pp = audio.play();
+						if (pp && typeof pp.catch === "function") pp.catch(function () {});
+					}
+				};
+				document.addEventListener("visibilitychange", onVisibility);
 				audioRef.current = audio;
 				return function () {
+					document.removeEventListener("visibilitychange", onVisibility);
 					try { audio.pause(); audio.src = ""; } catch { /* ignore */ }
 					if (audio.parentNode) audio.parentNode.removeChild(audio);
 					audioRef.current = null;
@@ -820,10 +940,21 @@ window.__ModuleLoader__.load({
 			var remote = state && state.playing ? state.playing : null;
 			var playing = remote && remote.song ? remote.song : null;
 			var isPlaying = Boolean(remote && remote.isPlaying);
+			var albumArtwork = playing && playing.albumPic ? playing.albumPic : null;
 			var dot = readyDot(state);
 			var title = playing ? playing.name : "未在播放";
 			var artist = playing ? (playing.artists || "") : (state && state.musicApiUp ? "月宝 Moony" : "播放器未连接");
 			var canControl = Boolean(state && state.musicApiUp);
+
+			// 唱片环境光：小尺寸采样，跨域、解码或 Canvas 失败均静默回退角色本色。
+			React.useEffect(function () {
+				var active = true;
+				if (!isPlaying || !albumArtwork) { setAmbientColor(null); return function () { active = false; }; }
+				extractAmbientColor(albumArtwork).then(function (color) {
+					if (active) setAmbientColor(color);
+				});
+				return function () { active = false; };
+			}, [albumArtwork, isPlaying]);
 
 			// 切歌时拉歌词与作者头像
 			var songId = playing ? playing.id : null;
@@ -923,7 +1054,7 @@ window.__ModuleLoader__.load({
 						? h("div", { className: "dsa-pet-notes" }, [h("span", null, "♪"), h("span", null, "♫"), h("span", null, "♪")])
 						: null,
 					h(MoonyPet, {
-						petId: petId, agentStatus: state && state.agentStatus, mediaUrl: petImg, isPlaying: isPlaying,
+						petId: petId, agentStatus: state && state.agentStatus, mediaUrl: petImg, isPlaying: isPlaying, ambientColor: ambientColor,
 						title: getMoony(petId).name + " · 展开播放器", onPointerDown: onDragStart,
 						onClick: function (event) {
 							event.stopPropagation();
@@ -1170,6 +1301,8 @@ window.__ModuleLoader__.load({
 		exports.MOONY_CATALOG = MOONY_CATALOG;
 		exports.MOONY_STATUS = MOONY_STATUS;
 		exports.getMoony = getMoony;
+		exports.dominantColorFromPixels = dominantColorFromPixels;
+		exports.extractAmbientColor = extractAmbientColor;
 		exports.readStoredMoonyId = readStoredMoonyId;
 		exports.writeStoredMoonyId = writeStoredMoonyId;
 		exports.resolveMoonyState = resolveMoonyState;
