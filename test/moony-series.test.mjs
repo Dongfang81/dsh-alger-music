@@ -7,7 +7,7 @@ function toChildren(children) {
 	return children.length === 0 ? undefined : children.length === 1 ? children[0] : children;
 }
 
-function loadClient() {
+function loadClient({ imagePixels = null, imageFails = false } = {}) {
 	let definition;
 	const react = {
 		createElement(type, props, ...children) {
@@ -17,9 +17,26 @@ function loadClient() {
 		useRef(value) { return { current: value }; },
 		useState(value) { return [typeof value === 'function' ? value() : value, () => {}]; }
 	};
+	const document = {
+		body: { appendChild() {} }, head: { appendChild() {} },
+		createElement(tag) {
+			if (tag === 'canvas') return {
+				getContext() {
+					return { drawImage() {}, getImageData() { return { data: imagePixels || new Uint8ClampedArray() }; } };
+				}
+			};
+			return { dataset: {}, parentNode: { removeChild() {} } };
+		}
+	};
+	class TestImage {
+		set src(value) {
+			this.currentSrc = value;
+			Promise.resolve().then(() => imageFails ? this.onerror?.(new Error('image failed')) : this.onload?.());
+		}
+	}
 	const sandbox = {
 		clearInterval() {}, clearTimeout() {},
-		document: { body: { appendChild() {} }, head: { appendChild() {} }, createElement() { return { dataset: {}, parentNode: { removeChild() {} } }; } },
+		document, Image: TestImage,
 		fetch() { throw new Error('effects stay inactive in unit tests'); },
 		localStorage: { getItem() { return null; }, setItem() {} },
 		setInterval() { return 1; }, setTimeout() { return 1; },
@@ -33,18 +50,75 @@ function loadClient() {
 	});
 }
 
-test('catalog contains Classic plus the six approved first-wave characters', () => {
+test('catalog contains the first wave and the three retained listening-style characters', () => {
 	const { MOONY_CATALOG } = loadClient();
-	assert.deepEqual(Array.from(MOONY_CATALOG, (pet) => pet.id), ['classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush']);
-	assert.equal(new Set(Array.from(MOONY_CATALOG, (pet) => pet.id)).size, 7);
-	assert.deepEqual(Array.from(MOONY_CATALOG, (pet) => pet.motion), ['float', 'beat', 'orbit', 'drift', 'scan', 'chorus', 'hush']);
-	assert.equal(new Set(Array.from(MOONY_CATALOG, (pet) => pet.motion)).size, 7);
+	assert.deepEqual(Array.from(MOONY_CATALOG, (pet) => pet.id), [
+		'classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush',
+		'loop', 'bass', 'vinyl'
+	]);
+	assert.equal(new Set(Array.from(MOONY_CATALOG, (pet) => pet.id)).size, 10);
+	assert.deepEqual(Array.from(MOONY_CATALOG, (pet) => pet.motion), [
+		'float', 'beat', 'orbit', 'drift', 'scan', 'chorus', 'hush',
+		'loop', 'bass', 'vinyl'
+	]);
+	assert.equal(new Set(Array.from(MOONY_CATALOG, (pet) => pet.motion)).size, 10);
 	for (const pet of MOONY_CATALOG) {
 		assert.match(pet.name, /^Moony/);
 		assert.match(pet.colors.ear, /^#[0-9A-F]{6}$/);
 		assert.match(pet.colors.highlight, /^#[0-9A-F]{6}$/);
 		assert.match(pet.colors.rim, /^#[0-9A-F]{6}$/);
 	}
+});
+
+test('moon phase clamps progress and fades only through the final eight percent', () => {
+	const { resolveMoonPhase } = loadClient();
+	assert.deepEqual(Object.values(resolveMoonPhase(-1)), [0, 1]);
+	assert.deepEqual(Object.values(resolveMoonPhase(0.5)), [0.5, 1]);
+	assert.deepEqual(Object.values(resolveMoonPhase(0.92)), [0.92, 1]);
+	assert.deepEqual(Object.values(resolveMoonPhase(0.96)), [0.96, 0.5]);
+	assert.deepEqual(Object.values(resolveMoonPhase(2)), [1, 0]);
+});
+
+test('Moony renders a static moon phase ring and a separate buffering gap', () => {
+	const { MoonyPet, MOONY_CSS } = loadClient();
+	const paused = MoonyPet({ petId: 'classic', isPlaying: false, playbackProgress: 0.5, isBuffering: false });
+	const ring = findNodes(paused, (node) => node.props?.className === 'dsa-moony-phase')[0];
+	const track = findNodes(paused, (node) => node.props?.className === 'dsa-moony-phase-track')[0];
+	const progress = findNodes(paused, (node) => node.props?.className === 'dsa-moony-phase-progress')[0];
+	assert.ok(ring);
+	assert.ok(track, 'the full orbit must remain faintly visible even at new moon');
+	assert.equal(ring.props['aria-label'], '播放进度 50%');
+	assert.equal(progress.props.style.strokeDashoffset, 94.25);
+	assert.equal(progress.props.style.opacity, 1);
+	assert.doesNotMatch(ring.props.className, /buffering/);
+
+	const buffering = MoonyPet({ petId: 'classic', playbackProgress: 0.5, isBuffering: true });
+	assert.match(findNodes(buffering, (node) => String(node.props?.className || '').startsWith('dsa-moony-phase'))[0].props.className, /buffering/);
+	assert.equal(findNodes(buffering, (node) => node.props?.className === 'dsa-moony-phase-gap').length, 1);
+	assert.match(MOONY_CSS, /\.dsa-moony-phase\.buffering \.dsa-moony-phase-gap\{[^}]*animation:dsa-moony-phase-flow/);
+	assert.doesNotMatch(MOONY_CSS, /\.dsa-moony-phase-progress\{[^}]*animation:/);
+	const ringRule = MOONY_CSS.match(/\.dsa-moony-phase\{([^}]*)\}/)?.[1];
+	const progressRule = MOONY_CSS.match(/\.dsa-moony-phase-progress\{([^}]*)\}/)?.[1];
+	assert.ok(Number(ringRule?.match(/inset:(-?\d+)px/)?.[1]) <= -4, 'the phase ring must sit clearly outside the face');
+	assert.ok(Number(progressRule?.match(/stroke-width:(\d+(?:\.\d+)?)/)?.[1]) >= 2, 'the progress arc must remain visible on a dark UI');
+	assert.match(progressRule, /color-mix\([^;]*white/, 'dark character colors must be lifted toward white for contrast');
+});
+
+test('audio buffering bindings start on starvation events and clear on recovery', () => {
+	const { bindAudioBuffering } = loadClient();
+	const listeners = new Map();
+	const removed = [];
+	const audio = {
+		addEventListener(name, callback) { listeners.set(name, callback); },
+		removeEventListener(name, callback) { removed.push([name, callback]); }
+	};
+	const states = [];
+	const unbind = bindAudioBuffering(audio, (value) => states.push(value));
+	for (const name of ['loadstart', 'waiting', 'stalled']) listeners.get(name)();
+	for (const name of ['canplay', 'canplaythrough', 'playing', 'seeked', 'ended', 'error']) listeners.get(name)();
+	assert.deepEqual(states, [true, true, true, false, false, false, false, false, false]);
+	unbind();
+	assert.equal(removed.length, 9);
 });
 
 test('resolver falls back to Classic, idle, and a blank face', () => {
@@ -63,6 +137,67 @@ test('resolver accepts approved states and trimmed media URLs', () => {
 	assert.equal(value.status, 'review');
 	assert.equal(value.faceMode, 'media');
 	assert.equal(value.mediaUrl, 'https://img.test/a.jpg');
+});
+
+test('dominant album color ignores transparent pixels and favors the most common visible color', () => {
+	const { dominantColorFromPixels } = loadClient();
+	const pixels = new Uint8ClampedArray([
+		238, 32, 48, 255,
+		238, 32, 48, 255,
+		238, 32, 48, 255,
+		25, 85, 220, 255,
+		20, 240, 80, 0
+	]);
+	assert.equal(dominantColorFromPixels(pixels), '#EE2030');
+	assert.equal(dominantColorFromPixels(new Uint8ClampedArray([20, 240, 80, 0])), null);
+});
+
+test('album image sampling returns a light color and safely falls back when loading fails', async () => {
+	const pixels = new Uint8ClampedArray([
+		42, 156, 202, 255,
+		42, 156, 202, 255,
+		230, 90, 30, 255
+	]);
+	const sampled = loadClient({ imagePixels: pixels });
+	assert.equal(await sampled.extractAmbientColor('https://img.test/album.jpg'), '#2A9CCA');
+	const failed = loadClient({ imageFails: true });
+	assert.equal(await failed.extractAmbientColor('https://img.test/broken.jpg'), null);
+});
+
+test('Moony light prioritizes agent status over album ambience and role rim', () => {
+	const { MoonyPet } = loadClient();
+	const idle = MoonyPet({ petId: 'classic', agentStatus: 'idle', isPlaying: false });
+	assert.equal(idle.props.style['--moony-light'], '#D8D0FF');
+
+	const playing = MoonyPet({ petId: 'classic', agentStatus: 'idle', isPlaying: true, ambientColor: '#1A8FB8' });
+	assert.equal(playing.props.style['--moony-light'], '#1A8FB8');
+	assert.match(playing.props.style['--moony-light-soft'], /^rgba\(26, 143, 184, /);
+
+	const running = MoonyPet({ petId: 'classic', agentStatus: 'running', isPlaying: true, ambientColor: '#1A8FB8' });
+	assert.equal(running.props.style['--moony-light'], '#3B82F6');
+});
+
+test('Moony lighting visibly reaches ear interiors, role rims, and tails', () => {
+	const { MOONY_CSS } = loadClient();
+	assert.match(MOONY_CSS, /\.dsa-moony-ear\{[^}]*0 0 \d+px var\(--moony-rim-soft\)/);
+	assert.match(MOONY_CSS, /\.dsa-moony-ear::before\{[^}]*background:[^}]*var\(--moony-light-soft\)/);
+	assert.match(MOONY_CSS, /\.dsa-moony-tail\{[^}]*drop-shadow\([^)]*var\(--moony-light-soft\)/);
+	assert.match(MOONY_CSS, /dsa-agent-running[^}]*border-color:var\(--moony-signal\)/);
+});
+
+test('rounded polygon ears use soft halos without tracing their sharp clip edges', () => {
+	const { MOONY_CSS, MoonyPet } = loadClient();
+	for (const petId of ['pulse', 'echo', 'hush']) {
+		const tree = MoonyPet({ petId, agentStatus: 'running', isPlaying: true, ambientColor: '#2A9CCA' });
+		assert.equal(tree.props['data-moony-soft-glow'], true);
+		assert.equal(findNodes(tree, (node) => node.props?.className === 'dsa-moony-soft-halos').length, 1);
+		assert.equal(findNodes(tree, (node) => String(node.props?.className || '').includes('dsa-moony-soft-halo')).length, 3);
+	}
+	const chorus = MoonyPet({ petId: 'chorus', agentStatus: 'running', isPlaying: true });
+	assert.equal(chorus.props['data-moony-soft-glow'], undefined);
+	assert.equal(findNodes(chorus, (node) => node.props?.className === 'dsa-moony-soft-halos').length, 0);
+	assert.match(MOONY_CSS, /data-moony-soft-glow='true'\] \.dsa-moony-ear\{filter:none\}/);
+	assert.match(MOONY_CSS, /\.dsa-moony-soft-halo\{[^}]*background:var\(--moony-light-soft\)[^}]*blur\(/);
 });
 
 test('prototype property pet IDs fall back to Classic', () => {
@@ -89,6 +224,8 @@ test('storage keeps valid choices and rejects invalid or unavailable storage', (
 	assert.equal(readStoredMoonyId(storage), 'drift');
 	values.set('dsh-moony-singer:pet-id:v1', 'not-a-pet');
 	assert.equal(readStoredMoonyId(storage), 'classic');
+	values.set('dsh-moony-singer:pet-id:v1', 'solo');
+	assert.equal(readStoredMoonyId(storage), 'classic');
 	const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
 	assert.equal(readStoredMoonyId(blocked), 'classic');
 	assert.equal(writeStoredMoonyId(blocked, 'echo'), 'echo');
@@ -109,12 +246,13 @@ function findNodes(root, predicate) {
 	return found;
 }
 
-function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } = {}) {
+function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false, ambientPixels = null } = {}) {
 	let definition;
 	let mountedPlayer;
 	let tree;
 	let hookIndex = 0;
 	let effectIndex = 0;
+	let effects = [];
 	let activeHooks;
 	const musicHooks = [];
 	const footerHooks = [];
@@ -133,6 +271,7 @@ function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } 
 		activeHooks = musicHooks;
 		hookIndex = 0;
 		effectIndex = 0;
+		effects = [];
 		tree = mountedPlayer.type(mountedPlayer.props);
 	};
 	const footerToggle = function () {
@@ -150,8 +289,9 @@ function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } 
 			return { type, props: { ...(props || {}), children: toChildren(children) } };
 		},
 		useCallback(fn) { hookIndex++; return fn; },
-		useEffect(callback) {
+		useEffect(callback, dependencies) {
 			hookIndex++;
+			effects.push({ callback, dependencies });
 			if (effectIndex++ === 0) callback();
 		},
 		useRef(value) {
@@ -172,10 +312,23 @@ function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } 
 	const document = {
 		body: { appendChild() {} },
 		head: { appendChild() {} },
-		createElement() { return { dataset: {}, parentNode: { removeChild() {} } }; }
+		createElement(tag) {
+			if (tag === 'canvas') return {
+				getContext() {
+					return { drawImage() {}, getImageData() { return { data: ambientPixels || new Uint8ClampedArray() }; } };
+				}
+			};
+			return { dataset: {}, parentNode: { removeChild() {} } };
+		}
 	};
+	class TestImage {
+		set src(value) {
+			this.currentSrc = value;
+			Promise.resolve().then(() => this.onload?.());
+		}
+	}
 	const sandbox = {
-		clearInterval() {}, clearTimeout() {}, document,
+		clearInterval() {}, clearTimeout() {}, document, Image: TestImage,
 		fetch() { throw new Error('effects stay inactive in MusicPlayer integration tests'); },
 		setInterval() { return 1; }, setTimeout() { return 1; },
 		window: {
@@ -214,7 +367,14 @@ function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false } 
 		};
 		return render(tree);
 	};
-	return { client, footerToggle, listeners, renderPickers, storage, tree: () => tree };
+	const runAlbumColorEffect = async function () {
+		const effect = effects.find(({ dependencies }) => Array.isArray(dependencies) && dependencies[0] === 'https://img.test/moon.jpg' && dependencies[1] === true);
+		assert.ok(effect, 'MusicPlayer must react to the active album artwork');
+		effect.callback();
+		await Promise.resolve();
+		await Promise.resolve();
+	};
+	return { client, footerToggle, listeners, renderPickers, runAlbumColorEffect, storage, tree: () => tree };
 }
 
 test('MusicPlayer preserves the selected Moony through the collapsed and expanded player flows', () => {
@@ -247,7 +407,17 @@ test('MusicPlayer preserves the selected Moony through the collapsed and expande
 	assert.equal(picker.props.selectedId, 'echo');
 });
 
-test('transform menu shows seven static previews and selecting one immediately transforms', () => {
+test('MusicPlayer samples the active album and passes its ambient color to Moony', async () => {
+	const harness = loadMusicPlayerHarness({
+		storedId: 'echo',
+		ambientPixels: new Uint8ClampedArray([54, 180, 120, 255, 54, 180, 120, 255, 220, 80, 30, 255])
+	});
+	await harness.runAlbumColorEffect();
+	const pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
+	assert.equal(pet.props.ambientColor, '#36B478');
+});
+
+test('transform menu shows ten static previews and selecting one immediately transforms', () => {
 	const harness = loadMusicPlayerHarness({ storedId: 'drift' });
 	findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0].props.onClick({ stopPropagation() {} });
 	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
@@ -265,8 +435,8 @@ test('transform menu shows seven static previews and selecting one immediately t
 	const picker = findNodes(expandedTree, (node) => node.type === harness.client.MoonyPicker)[0];
 	assert.ok(picker);
 	const menu = picker.type(picker.props);
-	assert.equal(findNodes(menu, (node) => node.props?.['data-moony-choice']).length, 7);
-	assert.equal(findNodes(menu, (node) => node.props?.className === 'dsa-moony-thumb').length, 7);
+	assert.equal(findNodes(menu, (node) => node.props?.['data-moony-choice']).length, 10);
+	assert.equal(findNodes(menu, (node) => node.props?.className === 'dsa-moony-thumb').length, 10);
 
 	findNodes(menu, (node) => node.props?.['data-moony-choice'] === 'echo')[0].props.onClick();
 	assert.equal(harness.storage.getItem('dsh-moony-singer:pet-id:v1'), 'echo');
@@ -318,16 +488,16 @@ test('MusicPlayer hides through the footer control and renders the picker only f
 	assert.equal(findNodes(body, (node) => node.props?.className === 'dsa-moony-menu').length, 0);
 });
 
-test('picker exposes seven static preview options and selects the clicked character', () => {
+test('picker exposes ten static preview options and selects the clicked character', () => {
 	const { MoonyPicker } = loadClient();
 	let selected = null;
 	const tree = MoonyPicker({ selectedId: 'classic', onSelect(id) { selected = id; } });
 	const buttons = findNodes(tree, (node) => node.type === 'button');
-	assert.equal(buttons.length, 7);
+	assert.equal(buttons.length, 10);
 	assert.equal(buttons[0].props['aria-checked'], true);
-	assert.equal(findNodes(tree, (node) => node.props?.className === 'dsa-moony-thumb').length, 7);
-	buttons.find((button) => button.props['data-moony-choice'] === 'chorus').props.onClick();
-	assert.equal(selected, 'chorus');
+	assert.equal(findNodes(tree, (node) => node.props?.className === 'dsa-moony-thumb').length, 10);
+	buttons.find((button) => button.props['data-moony-choice'] === 'vinyl').props.onClick();
+	assert.equal(selected, 'vinyl');
 });
 
 test('idle Classic has a blank face with no image, Emoji, or tail', () => {
@@ -372,41 +542,61 @@ test('a valid media source recovers an image node hidden by an earlier load fail
 
 test('Moony CSS defines every skin, tail, signal, and reduced-motion fallback', () => {
 	const { MOONY_CATALOG, MOONY_CSS, MoonyPet } = loadClient();
-	for (const ear of ['classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush']) {
+	for (const ear of ['classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush', 'loop', 'bass', 'vinyl']) {
 		assert.match(MOONY_CSS, new RegExp(`data-moony-ear=["']${ear}["']`));
 	}
 	for (const pet of MOONY_CATALOG) {
 		const tree = MoonyPet({ petId: pet.id, agentStatus: 'idle', isPlaying: true });
 		assert.equal(tree.props['data-moony-motion'], pet.motion);
-		assert.match(MOONY_CSS, new RegExp(`data-moony-motion=["']${pet.motion}["'][^}]*\\.dsa-moony-rhythm\\{animation:dsa-moony-listen-${pet.motion}`));
+		assert.match(MOONY_CSS, new RegExp(`data-moony-motion=["']${pet.motion}["']\\]\\.singing \\.dsa-moony-rhythm\\{animation:dsa-moony-dance-${pet.id}-body`));
 		assert.match(MOONY_CSS, new RegExp(`dsa-agent-idle\\[data-moony-motion=["']${pet.motion}["']\\][^}]*\\.dsa-moony-ear\\{animation:dsa-moony-idle-${pet.motion}`));
 	}
-	for (const tail of ['orbit', 'comet', 'curl']) {
+	for (const tail of ['orbit', 'comet', 'curl', 'needle']) {
 		assert.match(MOONY_CSS, new RegExp(`data-moony-tail=["']${tail}["']`));
 	}
 	assert.match(MOONY_CSS, /--moony-signal/);
-	assert.match(MOONY_CSS, /prefers-reduced-motion:\s*reduce[^}]*\.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-tail\{animation:none!important/);
+	assert.match(MOONY_CSS, /prefers-reduced-motion:\s*reduce[^}]*\.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-ear::after,.dsa-moony-tail,.dsa-moony-phase-gap\{animation:none!important/);
 	assert.match(MOONY_CSS, /dsa-agent-running \.dsa-moony-tail/);
 	assert.match(MOONY_CSS, /dsa-agent-failed \.dsa-moony-tail/);
 	assert.doesNotMatch(MOONY_CSS, /dsa-agent-running[^}]*background:/);
 });
 
-test('playing Moony drives ears and tails with each character music tempo', () => {
+test('playing Moony gives every character its own stable dance choreography', () => {
 	const { MOONY_CSS, MoonyPet } = loadClient();
-	const tempos = [
-		['classic', 'float', '.86s'], ['pulse', 'beat', '.44s'], ['echo', 'orbit', '1.6s'], ['drift', 'drift', '1.35s'],
-		['spark', 'scan', '.72s'], ['chorus', 'chorus', '.62s'], ['hush', 'hush', '1.8s']
+	const dances = [
+		['classic', 'float'], ['pulse', 'beat'], ['echo', 'orbit'], ['drift', 'drift'],
+		['spark', 'scan'], ['chorus', 'chorus'], ['hush', 'hush'], ['loop', 'loop'],
+		['bass', 'bass'], ['vinyl', 'vinyl']
 	];
-	for (const [petId, motion, tempo] of tempos) {
+	for (const [petId, motion] of dances) {
 		const tree = MoonyPet({ petId, isPlaying: true });
 		assert.match(tree.props.className, /\bsinging\b/);
 		assert.equal(tree.props['data-moony-motion'], motion);
-		assert.match(MOONY_CSS, new RegExp(`data-moony-motion=['"]${motion}['"]\\]\\.singing\\{--moony-beat:${tempo.replace('.', '\\.')}`));
+		assert.match(MOONY_CSS, new RegExp(`@keyframes dsa-moony-dance-${petId}-body`));
+		assert.match(MOONY_CSS, new RegExp(`@keyframes dsa-moony-dance-${petId}-ear`));
 	}
-	assert.match(MOONY_CSS, /\.dsa-moony-pet\.singing\[data-moony-motion\] \.dsa-moony-ear\{animation:dsa-moony-music-ear var\(--moony-beat/);
-	assert.match(MOONY_CSS, /\.dsa-moony-pet\.singing\[data-moony-motion\] \.dsa-moony-tail\{animation:dsa-moony-music-tail var\(--moony-beat/);
-	assert.match(MOONY_CSS, /@keyframes dsa-moony-music-ear/);
-	assert.match(MOONY_CSS, /@keyframes dsa-moony-music-tail/);
+
+	assert.match(MOONY_CSS, /data-moony-motion='float'\]\.singing \.dsa-moony-ear\{animation:dsa-moony-dance-classic-ear \.8s/);
+	assert.match(MOONY_CSS, /data-moony-motion='beat'\]\.singing \.dsa-moony-ear\.right\{animation-delay:-\.36s\}/);
+	assert.match(MOONY_CSS, /data-moony-motion='orbit'\]\.singing \.dsa-moony-ear\.left\{animation-delay:-\.36s\}/);
+	assert.match(MOONY_CSS, /data-moony-motion='orbit'\]\.singing \.dsa-moony-ear\.right\{animation-delay:-\.18s\}/);
+	assert.match(MOONY_CSS, /data-moony-motion='orbit'\]\.singing \.dsa-moony-tail\{animation:dsa-moony-dance-echo-tail 1\.4s/);
+	assert.match(MOONY_CSS, /data-moony-motion='drift'\]\.singing \.dsa-moony-tail\{animation:dsa-moony-dance-drift-tail 3\.8s/);
+	assert.match(MOONY_CSS, /data-moony-motion='scan'\]\.singing \.dsa-moony-ear::after\{[^}]*animation:dsa-moony-dance-spark-flash 2\.4s/);
+	assert.match(MOONY_CSS, /data-moony-motion='chorus'\]\.singing \.dsa-moony-tail\{animation:dsa-moony-dance-chorus-tail 4\.8s/);
+	assert.match(MOONY_CSS, /data-moony-motion='hush'\]\.singing \.dsa-moony-rhythm\{animation:dsa-moony-dance-hush-body 4\.8s/);
+	assert.doesNotMatch(MOONY_CSS, /dsa-moony-music-(?:ear|tail)/);
+});
+
+test('retained listening-style characters keep their identity outside the blank face', () => {
+	const { MOONY_CSS, MoonyPet } = loadClient();
+	const vinyl = MoonyPet({ petId: 'vinyl', mediaUrl: null });
+	assert.equal(findNodes(vinyl, (node) => node.props?.['data-moony-tail'] === 'needle').length, 1);
+	assert.equal(findNodes(vinyl, (node) => node.type === 'img').length, 0);
+	assert.match(MOONY_CSS, /data-moony-ear='loop'[^}]*background:transparent/);
+	assert.match(MOONY_CSS, /data-moony-ear='bass'[^}]*height:2\dpx/);
+	assert.match(MOONY_CSS, /data-moony-tail='needle'/);
+	assert.match(MOONY_CSS, /\.dsa-moony-menu\{[^}]*max-height:[^;}]+;[^}]*overflow-y:auto/);
 });
 
 test('Echo idle tail sways through a finite arc instead of completing a full orbit', () => {

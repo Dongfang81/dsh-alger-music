@@ -658,11 +658,17 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 
 
 /**
- * 构造 7 个面向模型的工具（复用 buildActions）。
- */
-/**
  * 构造面向模型的工具（复用 buildActions）。
  */
+/**
+ * 模型可见的工具结果渲染：必须返回内容块数组 [{type:'text',text}]。
+ * 宿主 LLM 适配器（如 DeepSeek chat-completions）只认内容块；纯字符串数组
+ * 会被 flattenText 展平为空，模型将收到 "(no output)"。
+ */
+function textBlock(lines) {
+	return [{ type: 'text', text: (Array.isArray(lines) ? lines : [lines]).join('\n') }];
+}
+
 function buildTools(cfg, actions) {
 	const status = {
 		name: 'alger_status',
@@ -676,8 +682,9 @@ function buildTools(cfg, actions) {
 				const lines = [];
 				lines.push(`音乐服务 ${cfg.musicApiPort}: ${rec.musicApiUp ? '在线' : '离线'}`);
 				if (rec.playing) {
+					const song = rec.playing.song;
 					lines.push(
-						`正在${rec.playing.isPlaying ? '播放' : '暂停'}: ${rec.playing.name}${rec.playing.artists ? ' - ' + rec.playing.artists : ''}`
+						`正在${rec.playing.isPlaying ? '播放' : '暂停'}: ${song?.name || ''}${song?.artists ? ' - ' + song.artists : ''}`
 					);
 					if (rec.playback && rec.playback.duration) {
 						lines.push(
@@ -691,7 +698,7 @@ function buildTools(cfg, actions) {
 				if (typeof rec.playMode === 'number') lines.push(`播放模式: ${['列表循环', '单曲循环', '随机'][rec.playMode] || rec.playMode}`);
 				if (rec.favorite) lines.push('当前歌曲已收藏');
 				if (!rec.musicApiUp) lines.push('提示: 音乐服务未在线，可调用 alger_setup action=start 启动。');
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: () => actions.status(),
@@ -717,7 +724,7 @@ function buildTools(cfg, actions) {
 				const lines = (rec.steps || []).map((s) => '· ' + s);
 				lines.push(`音乐服务: ${rec.musicApiUp ? '在线' : '离线'}`);
 				if (!rec.ok) lines.push('未能就绪，请按提示处理。');
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: (rawArgs) => actions.setup(asRecord(rawArgs)),
@@ -749,7 +756,7 @@ function buildTools(cfg, actions) {
 				});
 				if (!rec.items?.length) lines.push('（无结果）');
 				lines.push('提示: 想播放某一首，用 alger_play songId=<id> 或 keyword=<歌名>。');
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: (rawArgs) => actions.search(asRecord(rawArgs)),
@@ -773,7 +780,7 @@ function buildTools(cfg, actions) {
 				if (rec.durationMs) lines.push('时长: ' + fmtDuration(rec.durationMs));
 				lines.push(`直链: ${rec.url ? '可用（可播放）' : '无（版权限制）'}`);
 				if (rec.lyric) lines.push('歌词: 有（' + rec.lyric.split('\n').length + ' 行）');
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: (rawArgs) => actions.song(asRecord(rawArgs)),
@@ -797,7 +804,7 @@ function buildTools(cfg, actions) {
 					lines.push(`${i + 1}. [${t.id}] ${t.name} - ${t.artists}`);
 				});
 				if ((rec.tracks || []).length > 20) lines.push(`…（还有 ${(rec.tracks || []).length - 20} 首）`);
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: (rawArgs) => actions.playlist(asRecord(rawArgs)),
@@ -819,7 +826,7 @@ function buildTools(cfg, actions) {
 				const lines = (rec.steps || []).map((s) => '· ' + s);
 				if (rec.ok) lines.push('♪ 已播放：' + (rec.playedName || ''));
 				if (rec.guidance) lines.push('提示: ' + rec.guidance);
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: (rawArgs) => actions.play(asRecord(rawArgs)),
@@ -851,7 +858,7 @@ function buildTools(cfg, actions) {
 				if (rec.ok) lines.push(`队列: ${rec.queueLength ?? '?'} 首（本次${rec.added ?? 0} 首，${rec.mode || 'append'}）`);
 				if (rec.playedName) lines.push('♪ 开始播放：' + rec.playedName);
 				if (rec.guidance) lines.push('提示: ' + rec.guidance);
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: (rawArgs) => actions.queue(asRecord(rawArgs)),
@@ -879,7 +886,7 @@ function buildTools(cfg, actions) {
 				if (typeof rec.playing === 'boolean') lines.push(rec.playing ? '▶ 播放中' : '⏸ 已暂停');
 				if (rec.song) lines.push('当前: ' + rec.song);
 				if (typeof rec.playMode === 'number') lines.push(`播放模式: ${['列表循环', '单曲循环', '随机'][rec.playMode] || rec.playMode}`);
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: (rawArgs) => actions.control(asRecord(rawArgs)),
@@ -897,7 +904,7 @@ function buildTools(cfg, actions) {
 			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
 			render: (_args, value) => {
 				const rec = asRecord(value);
-				return ['宠物说：「' + (rec.text || '') + '」'];
+				return textBlock('宠物说：「' + (rec.text || '') + '」');
 			}
 		},
 		execute: (rawArgs) => actions.say(asRecord(rawArgs)),
@@ -916,7 +923,7 @@ function buildTools(cfg, actions) {
 				const lines = (rec.steps || []).map((s) => '· ' + s);
 				if (rec.ok) lines.push('♫ 推荐歌单：' + (rec.playlistName || '') + '（' + (rec.queueLength ?? '') + ' 首）');
 				if (rec.guidance) lines.push('提示: ' + rec.guidance);
-				return lines;
+				return textBlock(lines);
 			}
 		},
 		execute: () => actions.recommend(),
