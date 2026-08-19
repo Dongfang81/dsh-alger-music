@@ -29,6 +29,7 @@ import { createRequire } from 'node:module';
 import { createClient } from './lib/alger.js';
 import { createPlayer } from './lib/player.js';
 import { startApiServer, stopApiServer } from './lib/api-server.js';
+import { matchSourceUrl, matchSourceByKeyword } from './lib/source-match.js';
 
 export const name = 'dsh-moony-singer';
 export const inject = ['subprocess', 'tools', 'webServer'];
@@ -128,14 +129,57 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 		return up;
 	}
 
-	/** 取歌曲直链；失败返回 null。 */
-	async function urlFor(song) {
-		if (!song || !song.id) return null;
-		try {
-			return await client.songUrl(song.id, 'higher');
-		} catch {
-			return null;
+	/** 原始关键词 → 拆成「歌名 - 歌手」（支持「歌手 歌名」/「歌名 歌手」/「歌名-歌手」）。 */
+	function splitKeyword(kw) {
+		const s = String(kw || '').trim();
+		if (!s) return { name: '', artist: '' };
+		// 「歌名 - 歌手」或「歌名-歌手」
+		let m = s.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+		if (m) return { name: m[1].trim(), artist: m[2].trim() };
+		// 空格分隔：视第一个词为歌手、其余为歌名（如「周杰伦 双截棍」）
+		const parts = s.split(/\s+/);
+		if (parts.length >= 2) {
+			return { name: parts.slice(1).join(' '), artist: parts[0] };
 		}
+		return { name: s, artist: '' };
+	}
+
+	/** 取歌曲直链（多级兜底）：
+	 *  1) 音乐 API 直链（有版权时）；
+	 *  2) 歌曲元数据从其他平台匹配；
+	 *  3) 原始关键词匹配（网易云下架/列表只有翻唱时，按「歌名 - 歌手」拿原版音源）。
+	 *  返回 null 表示无法播放。 */
+	async function urlFor(song, keyword) {
+		// 1) 音乐 API 直链（含试听判定）
+		if (song && song.id) {
+			try {
+				const url = await client.songUrl(song.id, 'higher');
+				if (url) return url;
+			} catch {
+				/* 继续兜底 */
+			}
+		}
+		// 2) 歌曲元数据 → 多平台匹配
+		if (song && song.name) {
+			try {
+				const url = await matchSourceUrl(song);
+				if (url) return url;
+			} catch {
+				/* 继续兜底 */
+			}
+		}
+		// 3) 原始关键词 → 多平台匹配（覆盖网易云下架/翻唱场景）
+		const kw = String(keyword || '').trim();
+		if (kw) {
+			try {
+				const parts = splitKeyword(kw);
+				const hit = await matchSourceByKeyword(parts.name || kw, parts.artist);
+				if (hit && hit.url) return hit.url;
+			} catch {
+				/* 返回 null */
+			}
+		}
+		return null;
 	}
 
 	return {
@@ -310,12 +354,12 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 		async song(args) {
 			const id = Number(args?.id);
 			if (!Number.isFinite(id)) throw new Error('请提供有效的歌曲 id。');
-			const [detail, lyricText, url] = await Promise.all([
-				client.songDetail(id),
-				client.lyric(id).catch(() => null),
-				client.songUrl(id).catch(() => null)
-			]);
+			const detail = await client.songDetail(id);
 			if (!detail) throw new Error(`未找到歌曲 id=${id}（详情接口无返回）。`);
+			const [lyricText, url] = await Promise.all([
+				client.lyric(id).catch(() => null),
+				urlFor(detail)
+			]);
 			return { ...compactSong(detail), lyric: lyricText, url };
 		},
 
@@ -416,8 +460,8 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				throw new Error('请提供 keyword 或 songId（二选一）。');
 			}
 
-			// 2) 确认可播放（有直链）
-			const url = await urlFor(song);
+			// 2) 确认可播放（多级兜底：网易云直链 → 元数据匹配 → 原始关键词匹配）
+			const url = await urlFor(song, keyword);
 			if (!url) {
 				return {
 					ok: false,
