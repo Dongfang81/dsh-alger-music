@@ -1,16 +1,12 @@
-# dsh-moony-singer 组合包补丁：把本地音乐控制插件行插入 profile。
+# dsh-moony-singer 组合包补丁：把内置音乐播放插件行插入 profile。
 # 用户可在自己 profile 的 cordis.patch.yml 里按 id 覆盖整个 config（见 README）。
 - insert:
     - id: alger-music
       name: 'dsh-moony-singer'
       config:
-        # AlgerMusicPlayer 自带的网易云音乐 API 本地服务端口（App 设置里可改）
-        musicApiPort: 30488
-        # 远程控制服务端口（默认关闭，本插件会自动写入 config.json 开启，仅允许本机回环访问）
-        remotePort: 31888
-        # Chrome DevTools 调试端口：点歌（alger_play）需要 App 以该端口启动
-        cdpPort: 9333
-        # 是否默认以 CDP 端口启动 App（关掉后 alger_play 降级为指引模式）
-        enableCdp: true
+        # 内置音乐 API 服务（开源网易云音乐 API）监听端口，仅本机回环
+        musicApiPort: 30588
+        # 监听地址（保持 127.0.0.1，不暴露到局域网）
+        musicApiHost: '127.0.0.1'
         # 单次 HTTP/命令操作超时（毫秒）
         timeoutMs: 20000

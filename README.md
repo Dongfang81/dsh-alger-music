@@ -1,9 +1,7 @@
 # dsh-moony-singer（月宝 Moony）
 
-DSH（DeepSeek Harness）本地音乐控制插件：驱动开源播放器 **AlgerMusicPlayer** 播放/控制音乐。
-
-不走浏览器播放、不解析音源，而是**调用你本机 App 自己的本地服务**：
-音质、歌词、下载、EQ 全部由 App 负责，插件只做“控制”。
+DSH（DeepSeek Harness）本地音乐播放插件：**自带开源音乐 API 服务 + 浏览器内置播放引擎**，
+无需安装任何桌面播放器，装完即用——搜索、点歌、歌单、歌词、推荐一键播放。
 
 ## 🎬 演示视频
 
@@ -23,26 +21,20 @@ Moony 现在包含常驻初代 **Moony Classic** 与六只 First Wave 成员。�
 
 - 本插件（dsh-moony-singer）以 **GPL-3.0** 许可发布，见 [LICENSE](./LICENSE)。
   你可以自由使用、修改与分发，但**任何分发或衍生作品（包括商用）都必须以相同许可开源**。
-- 本插件是**独立实现的控制/自动化工具**：不包含、不修改、不分发 AlgerMusicPlayer 及其任何依赖的代码，
-  仅通过 App 自身提供的本地 HTTP 服务（30488/31888）与 Chromium CDP 调试协议与其互操作。
-- 所驱动的 [AlgerMusicPlayer](https://github.com/algerkong/AlgerMusicPlayer) 以 **MIT** 许可发布
-  （Copyright (c) 2026 Alger）；其内置的 `netease-cloud-music-api-alger` 为 **MIT**，
-  上游 [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 为 **ISC**，
-  内置解锁模块 `@unblockneteasemusic/server` 为 **LGPL-3.0**（在 App 内部使用，与本插件无关）。
-- 使用本插件前请自行确认：你已安装 AlgerMusicPlayer，并遵守其许可条款及你所用音乐平台的服务条款。
+- 音乐数据与播放地址来自插件内置的**开源音乐 API 项目**（`netease-cloud-music-api-alger`，MIT 许可），
+  上游为 [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi)（ISC）。
+- 仅搜索与播放无版权限制的音乐资源；请遵守你所用音乐平台的服务条款。
 
 ## 工作原理
 
-AlgerMusicPlayer 自带的三个本机通道：
+插件启动时自动拉起一个本机音乐 API 服务（默认 30588，仅 127.0.0.1），
+搜索 / 歌曲详情 / 歌词 / 播放地址 / 歌单 / 推荐全部走它；播放由浮窗内的浏览器 `<audio>` 引擎出声。
 
-| 通道 | 端口 | 用途 |
-| --- | --- | --- |
-| 音乐 API（App 内置） | 30488（仅 127.0.0.1） | 搜索 / 歌曲详情 / 歌词 / 播放地址 / 歌单 |
-| 远程控制（express） | 31888（默认关闭） | 播放/暂停、上一首/下一首、音量±、收藏、当前状态 |
-| CDP 调试口 | 9333（需带参启动） | 点歌：把指定歌曲直接塞进 App 播放器开播 |
-
-插件会在 App 的 `config.json` 写入 `remoteControl` 配置（仅允许本机回环 IP），
-并以 `--remote-debugging-port=9333` 启动 App。
+| 组件 | 说明 |
+| --- | --- |
+| 内置音乐 API | 端口 30588（仅回环），插件自动启动/停止，无需任何外部依赖 |
+| 播放状态机 | 服务端内存态：队列 / 当前曲 / 播放模式 / 收藏 / 进度 |
+| 浏览器播放引擎 | 浮窗内 `<audio>` 元素播放直链，进度定时上报回服务端 |
 
 ## 工具与浮动窗口
 
@@ -52,28 +44,28 @@ AlgerMusicPlayer 自带的三个本机通道：
 
 | 工具 | 说明 |
 | --- | --- |
-| `alger_status` | 检查 App、三个通道、当前播放状态与播放列表 |
-| `alger_setup` | 一键就绪：`check` 检查 / `enable` 开远程控制 / `launch` 启动 / `relaunch` 写配置并以 CDP 重启 |
-| `alger_install` | 自动安装 AlgerMusicPlayer（未安装时）：按 CPU 架构下载官方 DMG（镜像兜底）→ 校验 → 装进 /Applications |
+| `alger_status` | 检查音乐服务、当前播放、进度、收藏与播放模式 |
+| `alger_setup` | 音乐服务管理：`check` 检查 / `start` 启动 / `stop` 停止（插件加载时自动启动，一般无需手动） |
 | `alger_search` | 搜索歌曲/专辑/歌单/歌手（type=1/10/1000/1004） |
 | `alger_song` | 单曲详情 + 歌词 + 播放直链 |
 | `alger_playlist` | 歌单歌曲列表 |
 | `alger_play` | 点歌：`songId` 或 `keyword`，立即播放 |
-| `alger_queue` | 播放列表：`add` 追加单曲 / `add-all` 整批加入 / `add-next` 插入下一首 / `playlist` 整单播放歌单 |
+| `alger_queue` | 播放列表：`add` 追加单曲 / `add-all` 整批加入 / `add-next` 插入下一首 / `playlist` 整单播放歌单 / `jump` 跳转 |
 | `alger_control` | 播放/暂停/切歌/音量/收藏/播放模式 |
+| `alger_recommend` | 推荐播放：随机推荐歌单整单播放 |
 | `alger_say` | 让音乐宠物开口说一句话（气泡提示约 6 秒，播报点歌/状态） |
 
 **浮动播放窗口（浏览器右下角）：**
 - 实时显示当前歌曲 / 歌手 / 播放状态与**播放列表**（每 1.5s 轮询）；
 - **宠物会说话**：点歌/加入队列时自动播报；`alger_say` 可让宠物开口；
-- **agent 状态光环**（Codex Pets 式）：DSH 正在处理=蓝色脉冲环、等你审批=橙环、出错=红环、待审查=绿环；
-- 播放/暂停、上一首、下一首、音量±、**收藏**（♥）按钮；
+- **agent 状态光环**：DSH 正在处理=蓝色脉冲环、等你审批=橙环、出错=红环、待审查=绿环；
+- 播放/暂停、上一首、下一首、**收藏**（♥）、播放模式（列表循环/单曲循环/随机）按钮；
 - 搜索框点歌（歌曲/歌单两种模式）；歌曲结果可**单首加入**或**一键全部加入播放列表**；歌单结果**一键整单播放**；
-- **未安装 App 时显示"一键安装"**（自动下载安装 AlgerMusicPlayer）；装好后"一键就绪"开启远程控制并以调试口重启；
+- 右上角**「变身」**可在七只 Moony 间切换；
 - 可拖动、可折叠，位置记忆在浏览器 localStorage。
 
-窗口数据经插件服务端路由 `/dsh-alger/state|command|search|play|queue|setup|install` 中转，
-页面不直接接触 App 的本地端口。
+窗口数据经插件服务端路由 `/dsh-alger/state|command|search|play|queue|setup|url|playback` 中转，
+页面不直接接触本机音乐 API 端口。
 
 ## 安装（到 web profile）
 
@@ -82,19 +74,7 @@ dsh plugin --profile web add github:Dongfang81/moony-singer   # 或 git 仓库�
 # 然后重启 dsh web 生效
 ```
 
-## 依赖说明（安装即用：无需提前安装 App）
-
-插件**驱动**开源播放器 AlgerMusicPlayer（播放/登录/歌词/下载都在 App 内，插件只做控制）。
-**新机器无需提前安装 App**，装完插件后全流程自动化：
-
-1. **装插件**：`dsh plugin --profile web add github:Dongfang81/moony-singer` → 重启 dsh web；
-2. **装 App**（浮窗右上角按钮显示 **「安装」**，或对话里调 `alger_install`）：
-   - 自动按 CPU 架构（arm64/x64）下载官方 DMG（GitHub 直连 + **镜像兜底**，约 130MB）；
-   - 校验 DMG 完整性 → 挂载 → 安装进 `/Applications`（若检测到旧版正在运行会先退出，旧版备份为 `.bak`，不删除）→ 清理安装包；
-3. **连接**（按钮变 **「连接」**，或 `alger_setup action=relaunch`）：一键开启远程控制并以调试口重启 App；
-4. 之后即可对话点歌 / 小窗操作（按钮显示 **「已连接」**）。
-
-**两个前提**：① 需要网络下载（国内自动走镜像）；② 写入 `/Applications` 需要当前用户有管理员权限（个人电脑默认满足）。
+**无需安装任何桌面播放器**——插件自带全部能力，装完即用。
 
 ## 配置（可选，默认值即可用）
 
@@ -104,18 +84,15 @@ dsh plugin --profile web add github:Dongfang81/moony-singer   # 或 git 仓库�
 - id: alger-music
   name: 'dsh-moony-singer'
   config:
-    musicApiPort: 30488   # App 内设置的音乐 API 端口
-    remotePort: 31888     # 远程控制端口
-    cdpPort: 9333         # CDP 调试端口（点歌用）
-    enableCdp: true       # 是否默认以调试端口启动
-    appPath: /Applications/AlgerMusicPlayer.app
+    musicApiPort: 30588   # 内置音乐 API 端口（改端口需避开占用）
+    musicApiHost: '127.0.0.1'
+    timeoutMs: 20000      # 单次操作超时（毫秒）
 ```
 
 ## 常见问题
 
-- **点歌前先就绪**：先 `alger_setup action=relaunch`（会重启 App，中断当前播放），
-  之后 `alger_play songId=xxx` 即可直达播放。
-- **VIP/版权受限歌曲**：`alger_song` 可能拿不到直链（网易 API 限制），
-  但 App 应用内可正常播放；`alger_play` 不受影响（走 App 自身解析）。
-- **远程控制安全**：插件写入的 `allowedIps` 只放行本机回环地址；
-  该服务默认关闭，仅在插件启用时开启。
+- **音乐服务未就绪**：右上角按钮显示「连接」时点击即可自动启动；插件加载时本应自动启动，
+  若失败多半是端口被占用，可改 `musicApiPort` 或重启 dsh web。
+- **部分歌曲无法播放**：版权限制的歌曲可能没有可用播放地址（`alger_song` 会返回 `url: null`），换一首即可。
+- **播放不出声**：浏览器可能拦截了自动播放，点一下浮窗的播放/暂停按钮即可。
+- **内置服务安全**：音乐 API 只监听 `127.0.0.1`，不暴露到局域网。

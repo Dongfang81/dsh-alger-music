@@ -1,14 +1,15 @@
 {
   "name": "dsh-moony-singer",
   "version": "0.2.0",
-  "description": "DSH 本地音乐控制插件：驱动开源播放器 AlgerMusicPlayer，附带浏览器浮动播放小窗。走 App 自带的本地服务——30488 音乐 API（搜索/详情/歌词）+ 31888 远程控制（播放/暂停/切歌/音量）+ CDP（点歌直达播放）。零运行时依赖。",
+  "description": "DSH 本地音乐播放插件：自带开源音乐 API 服务 + 浏览器内置播放引擎，无需任何桌面播放器即可搜索、点歌、歌单、歌词、推荐播放。附带月宝 Moony 宠物浮窗。",
   "type": "module",
   "main": "index.js",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
     "./lib/alger.js": "./lib/alger.js",
-    "./lib/cdp.js": "./lib/cdp.js",
+    "./lib/player.js": "./lib/player.js",
+    "./lib/api-server.js": "./lib/api-server.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -23,7 +24,7 @@
     "test"
   ],
   "scripts": {
-    "check": "node --check index.js && node --check client.js && node --check lib/alger.js && node --check lib/cdp.js",
+    "check": "node --check index.js && node --check client.js && node --check lib/alger.js && node --check lib/player.js && node --check lib/api-server.js",
     "test": "node --test test/*.test.mjs"
   },
   "dsh": {
@@ -42,11 +43,15 @@
     "deepseek-harness",
     "plugin",
     "music",
-    "alger",
-    "floating-player"
+    "moony",
+    "floating-player",
+    "netease"
   ],
   "license": "GPL-3.0",
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "netease-cloud-music-api-alger": "^4.30.0"
   }
 }

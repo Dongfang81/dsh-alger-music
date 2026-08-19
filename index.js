@@ -3,48 +3,42 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 /**
- * dsh-alger-music —— 本地音乐控制插件（服务端工具型 + Web 路由，零运行时依赖）。
+ * dsh-moony-singer —— 本地音乐播放插件（服务端工具型 + Web 路由）。
  *
- * 驱动开源播放器 AlgerMusicPlayer（macOS /Applications/AlgerMusicPlayer.app）：
+ * 自带开源网易云音乐 API 服务（netease-cloud-music-api-alger，MIT），
+ * 浮窗内置 <audio> 播放引擎，无需安装任何桌面播放器即可搜索与播放：
  *  - 工具（给模型用）：alger_status / alger_setup / alger_search / alger_song /
- *    alger_playlist / alger_play / alger_control；
+ *    alger_playlist / alger_play / alger_control / alger_recommend；
  *  - Web 路由（给浏览器浮动窗口 client.js 用）：
  *    GET  /dsh-alger/state    播放器状态快照
- *    POST /dsh-alger/command  远程控制命令 { action }
+ *    POST /dsh-alger/command  播放控制命令 { action }
  *    POST /dsh-alger/search   搜索 { keywords, type?, limit? }
  *    POST /dsh-alger/play     点歌 { keyword? | songId? }
- *    POST /dsh-alger/setup    一键就绪 { action: check|enable|launch|relaunch }
+ *    POST /dsh-alger/url      取歌曲直链 { id }
+ *    POST /dsh-alger/playback 播放进度上报（客户端 <audio>）
+ *    POST /dsh-alger/setup    内置服务管理 { action: check|start|stop }
  *
- * 三条本地通道（App 自带）：
- *  - 30488 网易云音乐 API（搜索/详情/歌词/直链/歌单）
- *  - 31888 远程控制（播放/暂停/切歌/音量/收藏/状态；需写入 App 配置开启，仅回环）
- *  - 9333  CDP 调试口（点歌直达播放；需带 --remote-debugging-port 启动）
+ * 单条本地通道：插件自启的音乐 API 服务（默认 30588，仅回环）。
+ * 播放状态由内置状态机（lib/player.js）维护，浏览器只负责出声。
  *
  * 依赖注入：ctx.subprocess（进程执行）、ctx.tools（工具注册）、ctx.webServer（路由）。
  *
- * @module dsh-alger-music
+ * @module dsh-moony-singer
  */
-import { createClient, enableRemoteControl, readRemoteControlConfig } from './lib/alger.js';
-import { buildPlayScript, buildGetQueueScript, buildQueueScript, buildQueueJumpScript, buildTogglePlayModeScript, cdpEvaluate } from './lib/cdp.js';
-import { existsSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { createRequire } from 'node:module';
+import { createClient } from './lib/alger.js';
+import { createPlayer } from './lib/player.js';
+import { startApiServer, stopApiServer } from './lib/api-server.js';
 
 export const name = 'dsh-moony-singer';
 export const inject = ['subprocess', 'tools', 'webServer'];
 
 /** 默认配置（可被 cordis.patch.yml 的 config 覆盖）。 */
 const DEFAULTS = {
-	appName: 'AlgerMusicPlayer',
-	appPath: '/Applications/AlgerMusicPlayer.app',
-	musicApiPort: 30488,
-	remotePort: 31888,
-	cdpPort: 9333,
-	enableCdp: true,
-	timeoutMs: 20000,
-	// alger_install 自动安装用的发布版本与镜像（GitHub 被墙时依次兜底）
-	installRelease: 'v5.1.0',
-	installMirrors: ['https://ghfast.top/', 'https://gh-proxy.com/', 'https://ghproxy.net/']
+	// 内置音乐 API 服务（插件自启，无需任何桌面播放器）
+	musicApiPort: 30588,
+	musicApiHost: '127.0.0.1',
+	timeoutMs: 20000
 };
 
 function resolveConfig(config) {
@@ -106,9 +100,16 @@ function normalize(s) {
 /**
  * 所有业务动作（工具与 Web 路由共用）。
  */
-function buildActions(cfg, client, shared) {
-	// 已安装版本（缓存 60s，避免状态轮询时反复 spawn）
-	let versionCache = { value: null, at: 0 };
+/**
+ * 所有业务动作（工具与 Web 路由共用）。
+ *
+ * @param {object} cfg - 插件配置
+ * @param {object} client - 内置音乐 API 客户端（lib/alger.js）
+ * @param {object} shared - 共享状态（notice / agentStatus）
+ * @param {object} player - 内置播放状态机（lib/player.js）
+ * @param {object} apiHandle - 内置 API 服务状态（{handle, isUp, serverEntryPath}）
+ */
+function buildActions(cfg, client, shared, player, apiHandle) {
 	// 宠物台词/通知（agent → 宠物气泡，约 6 秒）
 	const noticeStore = { text: '', until: 0 };
 	shared.setNotice = (text, ms = 6000) => {
@@ -116,73 +117,49 @@ function buildActions(cfg, client, shared) {
 		noticeStore.until = Date.now() + ms;
 	};
 	shared.getNotice = () => (noticeStore.until > Date.now() ? noticeStore.text : null);
-	async function installedVersion() {
-		if (!client.appInstalled()) return null;
-		if (versionCache.value && Date.now() - versionCache.at < 60000) return versionCache.value;
+
+	// 音乐服务是否在线（2s 探活缓存）
+	let apiUpCache = { value: false, at: 0 };
+	async function apiUp() {
+		if (Date.now() - apiUpCache.at < 2000) return apiUpCache.value;
+		const up = await client.musicApiUp();
+		apiUpCache = { value: up, at: Date.now() };
+		if (apiHandle) apiHandle.isUp = up;
+		return up;
+	}
+
+	/** 取歌曲直链；失败返回 null。 */
+	async function urlFor(song) {
+		if (!song || !song.id) return null;
 		try {
-			const res = await client.run(
-				['defaults', 'read', join(cfg.appPath, 'Contents', 'Info.plist'), 'CFBundleShortVersionString'],
-				5000
-			);
-			versionCache = { value: res.exitCode === 0 ? res.stdout.trim() : null, at: Date.now() };
+			return await client.songUrl(song.id, 'higher');
 		} catch {
-			versionCache = { value: null, at: Date.now() };
+			return null;
 		}
-		return versionCache.value;
 	}
 
 	return {
 		/** alger_status */
 		async status() {
-			const installed = client.appInstalled();
-			const running = installed ? await client.appRunning() : false;
-			const [musicApiUp, remoteUp, cdpUp] = await Promise.all([
-				client.musicApiUp(),
-				client.remoteUp(),
-				client.cdpUp()
-			]);
-			let playing = null;
-			if (remoteUp) {
-				try {
-					playing = await client.remoteStatus();
-				} catch {
-					/* 状态查询失败时降级 */
-				}
-			}
-			// 播放列表 + 播放进度（CDP 可用时读取，不可用时降级为 null）
-			let queue = null;
-			let playback = null;
-			if (cdpUp) {
-				try {
-					queue = await cdpEvaluate(cfg.cdpPort, buildGetQueueScript(100), { timeoutMs: 6000 });
-					playback =
-						queue && typeof queue.position === 'number'
-							? {
-									position: queue.position,
-									duration: queue.duration,
-									playing: Boolean(queue.playing)
-								}
-							: null;
-				} catch {
-					/* CDP 读取失败时降级 */
-				}
-			}
+			const musicApiUp = await apiUp();
+			const snap = player.snapshot();
 			return {
 				ok: true,
-				installed,
-				version: installed ? await installedVersion() : null,
-				running,
 				musicApiUp,
-				remoteUp,
-				cdpUp,
-				remoteControl: readRemoteControlConfig(),
-				playing,
-				playback,
-				favorite: queue && typeof queue.favorite === 'boolean' ? queue.favorite : null,
-				playMode: queue && typeof queue.playMode === 'number' ? queue.playMode : null,
+				playing: snap.playing
+					? { ok: true, isPlaying: snap.isPlaying, song: snap.playing }
+					: null,
+				playback: snap.playing
+					? { position: snap.position, duration: snap.duration, playing: snap.isPlaying }
+					: null,
+				favorite: snap.favorite,
+				playMode: snap.playMode,
+				volume: snap.volume,
+				currentUrl: snap.currentUrl,
+				ready: snap.ready,
 				notice: shared.getNotice ? shared.getNotice() : null,
 				agentStatus: shared.getAgentStatus ? shared.getAgentStatus() : 'idle',
-				queue: queue && Array.isArray(queue.queue) ? { items: queue.queue, index: queue.index ?? -1 } : null
+				queue: snap.queue
 			};
 		},
 
@@ -198,15 +175,8 @@ function buildActions(cfg, client, shared) {
 		async recommend() {
 			const steps = [];
 			const log = (s) => steps.push(String(s));
-			if (!(await client.cdpUp())) {
-				const running = await client.appRunning();
-				return {
-					ok: false,
-					steps: [...steps, `CDP 点歌通道（${cfg.cdpPort}）不可用`, `App 运行中: ${running ? '是' : '否'}`],
-					guidance: running
-						? `App 未带调试端口启动。请调用 alger_setup action=relaunch 后重试。`
-						: `App 未运行。请调用 alger_setup action=relaunch 启动后重试。`
-				};
+			if (!(await apiUp())) {
+				return { ok: false, steps: [...steps, '音乐服务不可用'], guidance: '请先调用 alger_setup action=start 启动音乐服务。' };
 			}
 			// 1) 拉推荐歌单列表，随机挑一个合适的歌单（过滤曲目过少的）
 			let playlists = [];
@@ -234,206 +204,72 @@ function buildActions(cfg, client, shared) {
 			const plMeta = playlists[Math.floor(Math.random() * playlists.length)];
 			log(`随机命中歌单: [${plMeta.id}] ${plMeta.name}（${plMeta.trackCount} 首）`);
 
-			// 2) 取歌单歌曲，整单播放（与 alger_queue action=playlist 同路径）
+			// 2) 取歌单歌曲，整单替换队列播放
 			const pl = await client.playlist(plMeta.id, 500);
 			const songs = (pl?.tracks || []).filter((s) => s && s.id && s.name);
 			if (songs.length === 0) {
 				return { ok: false, steps: [...steps, `歌单「${plMeta.name}」无可播放歌曲`], guidance: '请稍后再试。' };
 			}
 			log(`歌单「${plMeta.name}」共 ${pl?.trackCount ?? songs.length} 首，取得 ${songs.length} 首，从「${songs[0].name}」开始`);
-			const script = buildQueueScript(songs, 'replace');
-			let out;
-			try {
-				out = await cdpEvaluate(cfg.cdpPort, script, { timeoutMs: cfg.timeoutMs });
-			} catch (error) {
-				return { ok: false, steps: [...steps, `CDP 执行失败: ${error.message}`], guidance: '可尝试 alger_setup action=relaunch 后重试。' };
-			}
-			steps.push(...(out?.steps || []));
-			if (!out?.ok) return { ok: false, steps, guidance: out?.error || '推荐播放失败' };
-			shared.setNotice('♫ 推荐歌单：' + plMeta.name + '（' + (out.queueLength ?? songs.length) + ' 首）');
+			const song = player.replaceAndPlay(songs);
+			const firstUrl = await urlFor(song);
+			player.state.currentUrl = firstUrl;
+			player.state.playing = true;
+			shared.setNotice('♫ 推荐歌单：' + plMeta.name + '（' + songs.length + ' 首）');
 			return {
 				ok: true,
 				steps,
-				playedName: out.playedName ?? songs[0].name,
+				playedName: song ? song.name : '',
 				playlistId: plMeta.id,
 				playlistName: plMeta.name,
-				added: out.added ?? songs.length,
-				queueLength: out.queueLength ?? songs.length
+				added: songs.length,
+				queueLength: player.state.queue.length
 			};
 		},
 
-		/** alger_setup */
+		/** alger_setup：内置音乐服务管理 */
 		async setup(args) {
 			const action = String(args?.action ?? 'check');
 			const steps = [];
 			const log = (s) => steps.push(String(s));
-			const installed = client.appInstalled();
-			if (!installed) {
-				return {
-					ok: false,
-					steps: [...steps, `未找到 App：${cfg.appPath}。请先安装 AlgerMusicPlayer。`],
-					musicApiUp: false,
-					remoteUp: false,
-					cdpUp: false
-				};
-			}
+			const musicApiUp = await apiUp();
 			if (action === 'check') {
-				const running = await client.appRunning();
-				const [musicApiUp, remoteUp, cdpUp] = await Promise.all([
-					client.musicApiUp(),
-					client.remoteUp(),
-					client.cdpUp()
-				]);
-				return { ok: running && musicApiUp && remoteUp, steps, running, musicApiUp, remoteUp, cdpUp };
+				log(`音乐服务 ${cfg.musicApiPort}: ${musicApiUp ? '在线' : '离线'}`);
+				return { ok: musicApiUp, steps, musicApiUp };
 			}
-			if (action === 'enable') {
-				const changed = enableRemoteControl(cfg.remotePort);
-				log(changed ? `已写入远程控制配置（端口 ${cfg.remotePort}，仅本机回环）` : '远程控制配置已是最新，无需写入');
-				log('注意: 配置需重启 App 生效，可继续调用 alger_setup action=relaunch');
-				const [musicApiUp, remoteUp, cdpUp] = await Promise.all([
-					client.musicApiUp(),
-					client.remoteUp(),
-					client.cdpUp()
-				]);
-				return { ok: remoteUp, steps, musicApiUp, remoteUp, cdpUp };
-			}
-			// launch / relaunch
-			const running = await client.appRunning();
-			if (action === 'relaunch' && running) {
-				log('正在退出正在运行的 App…');
-				await client.quitApp();
-				try {
-					await client.waitUntil(() => client.appRunning().then((r) => !r), 'App 完全退出', 10000, 500);
-				} catch {
-					log('等待退出超时，尝试强制结束');
-					await client.run(['pkill', '-f', cfg.appName]);
-					await new Promise((resolve) => setTimeout(resolve, 1000));
+			if (action === 'stop') {
+				if (apiHandle && apiHandle.handle) {
+					log('正在停止音乐服务…');
+					await stopApiServer(apiHandle.handle);
+					apiHandle.handle = null;
+					apiHandle.isUp = false;
 				}
+				log('音乐服务已停止（搜索/播放将不可用，可用 alger_setup action=start 重新启动）');
+				return { ok: true, steps, musicApiUp: false };
 			}
-			if (action === 'relaunch') {
-				const changed = enableRemoteControl(cfg.remotePort);
-				log(changed ? `已写入远程控制配置（端口 ${cfg.remotePort}，仅本机回环）` : '远程控制配置已是最新');
+			// start（默认）
+			if (musicApiUp) {
+				log(`音乐服务已在运行（${cfg.musicApiPort}），无需启动`);
+				return { ok: true, steps, musicApiUp: true };
 			}
-			if (!(await client.appRunning())) {
-				await client.launchApp({ cdp: cfg.enableCdp });
-				log(`已启动 App${cfg.enableCdp ? `（CDP 调试端口 ${cfg.cdpPort}）` : ''}`);
-			} else {
-				log('App 已在运行');
+			if (!apiHandle || !apiHandle.handle) {
+				log(`正在启动音乐服务（${cfg.musicApiHost}:${cfg.musicApiPort}）…`);
+				const result = startApiServer({
+					spawn: (spec) => apiHandle.spawn(spec),
+					serverEntryPath: apiHandle.serverEntryPath,
+					port: cfg.musicApiPort,
+					host: cfg.musicApiHost
+				});
+				if (!result.ok) return { ok: false, steps: [...steps, result.error || '启动失败'], guidance: '请检查端口占用或插件依赖是否安装完整。' };
+				apiHandle.handle = result.handle;
 			}
-			const wait = async (label, fn) => {
-				try {
-					await client.waitUntil(fn, label, cfg.timeoutMs);
-					log(`${label}: 在线`);
-					return true;
-				} catch (error) {
-					log(`${label}: 超时（${error.message}）`);
-					return false;
-				}
-			};
-			const musicApiUp = await wait('网易云 API ' + cfg.musicApiPort, () => client.musicApiUp());
-			const remoteUp = await wait('远程控制 ' + cfg.remotePort, () => client.remoteUp());
-			const cdpUp = await wait('CDP 点歌 ' + cfg.cdpPort, () => client.cdpUp());
-			return { ok: musicApiUp && remoteUp && cdpUp, steps, musicApiUp, remoteUp, cdpUp };
-		},
-
-		/** alger_install：自动下载并安装 AlgerMusicPlayer（按 CPU 架构选 DMG，镜像兜底） */
-		async install() {
-			const steps = [];
-			const log = (s) => steps.push(String(s));
-			if (client.appInstalled()) {
-				const ver = await installedVersion();
-				log(`已安装 AlgerMusicPlayer${ver ? ' ' + ver : ''}，无需重复安装。`);
-				return { ok: true, alreadyInstalled: true, version: ver, steps };
-			}
-			// 若旧版本正在运行，先退出再替换，避免覆盖运行中的 App bundle
-			if (await client.appRunning()) {
-				log('检测到 App 正在运行，先退出…');
-				await client.quitApp();
-				try {
-					await client.waitUntil(() => client.appRunning().then((r) => !r), 'App 退出', 10000, 500);
-				} catch {
-					log('等待退出超时，尝试强制结束');
-					await client.run(['pkill', '-f', cfg.appName]);
-					await new Promise((resolve) => setTimeout(resolve, 1000));
-				}
-			}
-			const release = String(cfg.installRelease || 'v5.1.0').replace(/^v/, 'v');
-			const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-			const fileName = `AlgerMusicPlayer-${release.replace(/^v/, '')}-mac-${arch}.dmg`;
-			const ghUrl = `https://github.com/algerkong/AlgerMusicPlayer/releases/download/${release}/${fileName}`;
-			const candidates = ['', ...(Array.isArray(cfg.installMirrors) ? cfg.installMirrors : [])];
-			const downloadPath = join(homedir(), 'Downloads', fileName);
-			const MIN_SIZE = 50 * 1024 * 1024;
-
-			// 1) 下载（官方直连 + 镜像兜底）
-			let downloaded = false;
-			for (const base of candidates) {
-				const url = base + ghUrl;
-				log(`下载 ${url}`);
-				try {
-					rmSync(downloadPath, { force: true });
-					const res = await client.run(['curl', '-sL', '--retry', '2', '-o', downloadPath, url], 600000);
-					if (res.exitCode === 0 && existsSync(downloadPath) && statSync(downloadPath).size > MIN_SIZE) {
-						downloaded = true;
-						log(`下载完成（${Math.round(statSync(downloadPath).size / 1048576)}MB）`);
-						break;
-					}
-					log('下载不完整或失败，尝试下一个源…');
-				} catch (error) {
-					log(`下载失败: ${(error && error.message) || error}`);
-				}
-			}
-			if (!downloaded) {
-				return {
-					ok: false,
-					steps,
-					guidance: `自动下载失败（网络受限？）。可手动下载安装：https://github.com/algerkong/AlgerMusicPlayer/releases/latest（${release}），装好后重新调用 alger_install 即可。`
-				};
-			}
-
-			// 2) 校验 DMG 完整性
-			log('校验 DMG 完整性…');
-			const verify = await client.run(['hdiutil', 'verify', downloadPath], 180000);
-			if (verify.exitCode !== 0) {
-				return { ok: false, steps: [...steps, 'DMG 校验失败，文件可能损坏'], guidance: '请重试 alger_install 或手动下载安装。' };
-			}
-
-			// 3) 挂载并安装到 /Applications（旧版先移为备份，不删除）
-			let mountPoint = null;
 			try {
-				const attach = await client.run(['hdiutil', 'attach', '-nobrowse', '-readonly', downloadPath], 60000);
-				const line = String(attach.stdout)
-					.split('\n')
-					.find((l) => l.includes('/Volumes/'));
-				mountPoint = line ? line.slice(line.indexOf('/Volumes/')).trim() : null;
-				if (!mountPoint) throw new Error('未解析到挂载点');
-				log(`已挂载 ${mountPoint}`);
-				const appSrc = join(mountPoint, cfg.appName + '.app');
-				if (!existsSync(appSrc)) throw new Error(`卷内未找到 ${cfg.appName}.app`);
-				if (existsSync(cfg.appPath)) {
-					await client.run(['mv', cfg.appPath, cfg.appPath + '.bak'], 30000);
-					log('旧版已移到 .bak 备份');
-				}
-				const copy = await client.run(['cp', '-R', appSrc, cfg.appPath], 300000);
-				if (copy.exitCode !== 0) throw new Error('复制到 /Applications 失败（权限不足？）');
-				log('已安装到 ' + cfg.appPath);
-			} finally {
-				if (mountPoint) {
-					try {
-						await client.run(['hdiutil', 'detach', mountPoint, '-quiet'], 30000);
-					} catch {
-						/* 忽略卸载失败 */
-					}
-				}
+				await client.waitUntil(() => client.musicApiUp(), '音乐服务就绪', cfg.timeoutMs, 500);
+				log(`音乐服务就绪（${cfg.musicApiPort}）`);
+				return { ok: true, steps, musicApiUp: true };
+			} catch (error) {
+				return { ok: false, steps: [...steps, `音乐服务启动超时: ${error.message}`], guidance: '端口可能被占用，可在配置中调整 musicApiPort 后重试。' };
 			}
-
-			// 4) 清理 dmg + 验证版本
-			rmSync(downloadPath, { force: true });
-			log('已清理安装包');
-			versionCache = { value: null, at: 0 };
-			const ver = await installedVersion();
-			log(`安装完成：AlgerMusicPlayer${ver ? ' ' + ver : ''}。接下来调用 alger_setup action=relaunch 一键就绪。`);
-			return { ok: true, steps, version: ver };
 		},
 
 		/** alger_search */
@@ -516,7 +352,6 @@ function buildActions(cfg, client, shared) {
 					/* 忽略 */
 				}
 			}
-			if (avatar) avatar = String(avatar).replace(/^http:\/\//, 'https://');
 			return { ok: true, id, name, avatar };
 		},
 
@@ -531,7 +366,27 @@ function buildActions(cfg, client, shared) {
 			return { ok: true, id, name: pl.name, trackCount: pl.trackCount ?? tracks.length, tracks };
 		},
 
-		/** alger_play */
+		/** 取歌曲直链（浮动窗口 <audio> 播放用） */
+		async songUrl(args) {
+			const id = Number(args?.id);
+			if (!Number.isFinite(id)) throw new Error('请提供有效的歌曲 id。');
+			const url = await client.songUrl(id, 'higher');
+			return { ok: true, id, url: url || null };
+		},
+
+		/** 播放进度上报（浮动窗口 <audio> 定时上报） */
+		async playback(args) {
+			const value = asRecord(args);
+			player.reportPlayback({
+				position: Number(value.position) || 0,
+				duration: Number(value.duration) || 0,
+				playing: Boolean(value.playing),
+				ready: Boolean(value.ready)
+			});
+			return { ok: true };
+		},
+
+		/** alger_play：点歌播放（内置播放引擎，浏览器 <audio> 出声） */
 		async play(args) {
 			const keyword = String(args?.keyword ?? '').trim();
 			const songId = Number(args?.songId);
@@ -561,79 +416,30 @@ function buildActions(cfg, client, shared) {
 				throw new Error('请提供 keyword 或 songId（二选一）。');
 			}
 
-			// 2) 检查 CDP 通道
-			if (!(await client.cdpUp())) {
-				const running = await client.appRunning();
+			// 2) 确认可播放（有直链）
+			const url = await urlFor(song);
+			if (!url) {
 				return {
 					ok: false,
-					steps: [...steps, `CDP 点歌通道（${cfg.cdpPort}）不可用`, `App 运行中: ${running ? '是' : '否'}`],
-					guidance: running
-						? `App 未带调试端口启动。请调用 alger_setup action=relaunch（会重启 App，中断当前播放），然后重试 alger_play。`
-						: `App 未运行。请调用 alger_setup action=relaunch 启动并等待就绪，然后重试 alger_play。`
+					steps: [...steps, `「${song.name}」暂无可用播放地址`],
+					guidance: '部分歌曲因版权限制无法直接播放，换一首试试。'
 				};
 			}
 
-			// 3) CDP 点歌
-			const playKw = keyword || song.name || '';
-			const script = buildPlayScript(playKw, song);
-			let cdpOut;
-			try {
-				cdpOut = await cdpEvaluate(cfg.cdpPort, script, { timeoutMs: cfg.timeoutMs });
-			} catch (error) {
-				return {
-					ok: false,
-					steps: [...steps, `CDP 执行失败: ${error.message}`],
-					guidance: '可尝试 alger_setup action=relaunch 后重试；或直接在 App 内搜索播放。'
-				};
-			}
-			steps.push(...(cdpOut?.steps || []));
-			if (!cdpOut?.ok) {
-				return {
-					ok: false,
-					steps,
-					guidance: cdpOut?.error || '点歌脚本未成功，可直接在 App 内搜索播放，或用 alger_control 控制播放。'
-				};
-			}
-
-			// 4) 轮询远程控制确认播放
-			let confirmed = false;
-			try {
-				await client.waitUntil(
-					async () => {
-						const st = await client.remoteStatus();
-						return st.song && Number(st.song.id) === Number(song.id) && st.isPlaying;
-					},
-					'App 播放确认',
-					15000,
-					700
-				);
-				confirmed = true;
-			} catch {
-				/* 确认超时不算失败（App 可能仍在缓冲） */
-			}
-			log(confirmed ? 'App 状态已确认正在播放该曲' : '已下发播放指令（App 状态暂未确认，可能仍在缓冲）');
+			// 3) 写入播放状态（客户端轮询到 currentUrl 后自动播放）
+			player.playSong(song);
+			player.state.currentUrl = url;
 			shared.setNotice('♪ 已播放：' + song.name);
-			return { ok: true, steps, playedName: song.name, playedId: song.id, confirmed };
+			return { ok: true, steps, playedName: song.name, playedId: song.id, confirmed: true };
 		},
 
-		/** alger_queue：播放列表操作（追加 / 插入下一首 / 整单播放） */
+		/** alger_queue：播放列表操作（追加 / 插入下一首 / 整单播放 / 跳转） */
 		async queue(args) {
 			const action = String(args?.action ?? '');
 			if (!['add', 'add-all', 'add-next', 'playlist', 'playlist-add', 'jump'].includes(action))
 				throw new Error('action 需为 add / add-all / add-next / playlist / playlist-add / jump。');
 			const steps = [];
 			const log = (s) => steps.push(String(s));
-
-			if (!(await client.cdpUp())) {
-				const running = await client.appRunning();
-				return {
-					ok: false,
-					steps: [...steps, `CDP 点歌通道（${cfg.cdpPort}）不可用`, `App 运行中: ${running ? '是' : '否'}`],
-					guidance: running
-						? `App 未带调试端口启动。请调用 alger_setup action=relaunch 后重试。`
-						: `App 未运行。请调用 alger_setup action=relaunch 启动后重试。`
-				};
-			}
 
 			// 1) 解析歌曲/歌单数据
 			let songs = [];
@@ -668,20 +474,15 @@ function buildActions(cfg, client, shared) {
 				}
 				if (action === 'add-next') mode = 'next';
 			} else if (action === 'jump') {
-				// 跳转队列位置播放：不解析歌曲数据，直接按 index 走 CDP
 				const idx = Number(args?.index);
 				if (!Number.isInteger(idx) || idx < 0) throw new Error('jump 需要有效的 index（0 起的整数）。');
-				steps.push(`目标队列位置: #${idx}`);
-				const script = buildQueueJumpScript(idx);
-				let jout;
-				try {
-					jout = await cdpEvaluate(cfg.cdpPort, script, { timeoutMs: cfg.timeoutMs });
-				} catch (error) {
-					return { ok: false, steps: [...steps, `CDP 执行失败: ${error.message}`], guidance: '可尝试 alger_setup action=relaunch 后重试。' };
-				}
-				steps.push(...(jout?.steps || []));
-				if (!jout?.ok) return { ok: false, steps, guidance: jout?.error || '跳转播放失败' };
-				return { ok: true, steps, mode: 'jump', playedName: jout.playedName, queueLength: jout.queueLength };
+				if (idx >= player.state.queue.length) throw new Error(`队列下标越界: ${idx}（队列共 ${player.state.queue.length} 首）`);
+				const song = player.jump(idx);
+				const url = await urlFor(song);
+				if (!url) return { ok: false, steps: [...steps, `「${song.name}」暂无可用播放地址`], guidance: '换一首试试。' };
+				player.state.currentUrl = url;
+				player.state.playing = true;
+				return { ok: true, steps, mode: 'jump', playedName: song ? song.name : '', queueLength: player.state.queue.length };
 			} else {
 				// add-all：整批搜索结果加入
 				const keyword = String(args?.keyword ?? '').trim();
@@ -693,101 +494,101 @@ function buildActions(cfg, client, shared) {
 				if (songs.length === 0) return { ok: false, steps, guidance: '换个关键词试试。' };
 			}
 
-			// 2) CDP 操作播放列表
-			const script = buildQueueScript(songs, mode);
-			let out;
-			try {
-				out = await cdpEvaluate(cfg.cdpPort, script, { timeoutMs: cfg.timeoutMs });
-			} catch (error) {
-				return { ok: false, steps: [...steps, `CDP 执行失败: ${error.message}`], guidance: '可尝试 alger_setup action=relaunch 后重试。' };
+			// 2) 操作播放状态
+			if (mode === 'replace') {
+				const song = player.replaceAndPlay(songs);
+				const url = await urlFor(song);
+				player.state.currentUrl = url;
+				player.state.playing = true;
+				shared.setNotice('♫ 整单播放：' + (song ? song.name : '') + '（' + songs.length + ' 首）');
+				return { ok: true, steps, mode, added: songs.length, queueLength: player.state.queue.length, playedName: song ? song.name : null };
 			}
-			steps.push(...(out?.steps || []));
-			if (!out?.ok) return { ok: false, steps, guidance: out?.error || '播放列表操作失败' };
-			shared.setNotice(
-				mode === 'replace'
-					? '♫ 整单播放：' + (out.playedName || out.added + ' 首')
-					: '＋ 已加入播放列表 ' + out.added + ' 首'
-			);
-			return { ok: true, steps, mode, added: out.added, queueLength: out.queueLength, playedName: out.playedName ?? null };
+			if (mode === 'next') {
+				const n = player.insertNext(songs);
+				shared.setNotice('＋ 已插入下一首播放 ' + songs.length + ' 首');
+				return { ok: true, steps, mode, added: songs.length, queueLength: n };
+			}
+			const n = player.append(songs);
+			shared.setNotice('＋ 已加入播放列表 ' + songs.length + ' 首');
+			return { ok: true, steps, mode, added: songs.length, queueLength: n, playedName: null };
 		},
 
-		/** alger_control */
+		/** alger_control：播放控制（内置状态机） */
 		async control(args) {
 			const action = String(args?.action ?? '');
 			if (!action)
 				throw new Error(
 					'请提供 action（toggle-play / play / pause / next / prev / volume-up / volume-down / toggle-favorite / playmode）。'
 				);
-			// 播放模式切换走 CDP（0=列表循环 / 1=单曲循环 / 2=随机）
+			if (action === 'toggle-play' || action === 'play' || action === 'pause') {
+				const wantPlay = action === 'play' ? true : action === 'pause' ? false : !player.state.playing;
+				if (player.state.playing === wantPlay) {
+					return { action, message: `当前已是${wantPlay ? '播放' : '暂停'}状态，无需操作` };
+				}
+				player.state.playing = wantPlay;
+				return { action, message: wantPlay ? '已播放' : '已暂停', playing: player.state.playing };
+			}
+			if (action === 'next' || action === 'prev') {
+				const song = action === 'next' ? player.next() : player.prev();
+				if (!song) throw new Error('队列为空，无法切换。');
+				const url = await urlFor(song);
+				if (!url) throw new Error(`「${song.name}」暂无可用播放地址。`);
+				player.state.currentUrl = url;
+				player.state.playing = true;
+				return { action, message: '已切到：' + song.name, song: song.name, playing: true };
+			}
+			if (action === 'volume-up' || action === 'volume-down') {
+				const v = action === 'volume-up' ? player.volumeUp() : player.volumeDown();
+				return { action, message: '音量：' + Math.round(v * 100) + '%', volume: v };
+			}
+			if (action === 'toggle-favorite') {
+				const r = player.toggleFavorite();
+				return { action, message: r.favorite ? '已收藏' : '已取消收藏', favorite: r.favorite };
+			}
 			if (action === 'playmode') {
-				if (!(await client.cdpUp())) {
-					throw new Error(`CDP 点歌通道（${cfg.cdpPort}）未就绪。请先调用 alger_setup action=relaunch。`);
-				}
-				const out = await cdpEvaluate(cfg.cdpPort, buildTogglePlayModeScript(), { timeoutMs: cfg.timeoutMs });
-				if (!out?.ok) throw new Error(out?.error || '切换播放模式失败');
-				return { action, message: '已切换播放模式', playMode: out.playMode };
+				const m = player.togglePlayMode();
+				return { action, message: '已切换播放模式', playMode: m };
 			}
-			if (!(await client.remoteUp())) {
-				throw new Error(`远程控制（${cfg.remotePort}）未就绪。请先调用 alger_setup action=relaunch 开启远程控制并重启 App。`);
-			}
-			let effective = action;
-			if (action === 'play' || action === 'pause') {
-				const st = await client.remoteStatus();
-				const wantPlay = action === 'play';
-				if (st.isPlaying === wantPlay) {
-					return { action, message: `当前已是${wantPlay ? '播放' : '暂停'}状态，无需操作`, status: st };
-				}
-				effective = 'toggle-play';
-			}
-			const res = await client.remoteCommand(effective);
-			await new Promise((resolve) => setTimeout(resolve, 500));
-			let status = null;
-			try {
-				status = await client.remoteStatus();
-			} catch {
-				/* 状态可选 */
-			}
-			return { action, message: (res && res.message) || '已发送', status };
+			throw new Error('不支持的 action: ' + action);
 		}
 	};
 }
 
+
 /**
  * 构造 7 个面向模型的工具（复用 buildActions）。
+ */
+/**
+ * 构造面向模型的工具（复用 buildActions）。
  */
 function buildTools(cfg, actions) {
 	const status = {
 		name: 'alger_status',
 		description:
-			'检查 AlgerMusicPlayer 播放器状态：App 是否安装/运行、本地网易云 API(30488)、远程控制(31888)、CDP 点歌通道(9333) 是否在线，以及当前正在播放的歌曲与播放/暂停状态。无副作用。',
+			'检查内置音乐播放器状态：音乐服务是否在线（端口 ' + cfg.musicApiPort + '）、当前播放的歌曲、播放/暂停、进度、收藏与播放模式。无副作用。',
 		parameters: compileParameters({}),
 		output: {
 			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
 			render: (_args, value) => {
 				const rec = asRecord(value);
 				const lines = [];
-				lines.push(`App 安装: ${rec.installed ? '是' : '否'} | 运行中: ${rec.running ? '是' : '否'}`);
-				lines.push(
-					`网易云 API ${cfg.musicApiPort}: ${rec.musicApiUp ? '在线' : '离线'} | ` +
-						`远程控制 ${cfg.remotePort}: ${rec.remoteUp ? '在线' : '离线'} | ` +
-						`CDP 点歌 ${cfg.cdpPort}: ${rec.cdpUp ? '在线' : '离线'}`
-				);
-				if (rec.remoteControl) {
-					const rc = rec.remoteControl;
-					lines.push(
-						`远程控制配置: ${rc.enabled ? '已开启' : '未开启'}(端口 ${rc.port}，允许 IP: ${(rc.allowedIps || []).join(', ') || '全部'})`
-					);
-				}
+				lines.push(`音乐服务 ${cfg.musicApiPort}: ${rec.musicApiUp ? '在线' : '离线'}`);
 				if (rec.playing) {
 					lines.push(
 						`正在${rec.playing.isPlaying ? '播放' : '暂停'}: ${rec.playing.name}${rec.playing.artists ? ' - ' + rec.playing.artists : ''}`
 					);
+					if (rec.playback && rec.playback.duration) {
+						lines.push(
+							`进度: ${fmtDuration(rec.playback.position * 1000)} / ${fmtDuration(rec.playback.duration * 1000)}`
+						);
+					}
 				} else {
-					lines.push('当前无播放信息（远程控制未就绪或未在播放）');
+					lines.push('当前无播放内容');
 				}
-				if (rec.installed && !rec.running) lines.push('提示: App 未运行，可调用 alger_setup action=launch 启动。');
-				if (rec.running && !rec.remoteUp) lines.push('提示: 远程控制未就绪，可调用 alger_setup action=relaunch 一键开启并重启 App。');
-				if (rec.running && !rec.cdpUp) lines.push('提示: CDP 点歌通道未就绪（App 未带调试端口启动），点歌前请先 alger_setup action=relaunch。');
+				if (rec.queue && Array.isArray(rec.queue.items)) lines.push(`播放列表: ${rec.queue.items.length} 首（当前第 ${(rec.queue.index ?? -1) + 1} 首）`);
+				if (typeof rec.playMode === 'number') lines.push(`播放模式: ${['列表循环', '单曲循环', '随机'][rec.playMode] || rec.playMode}`);
+				if (rec.favorite) lines.push('当前歌曲已收藏');
+				if (!rec.musicApiUp) lines.push('提示: 音乐服务未在线，可调用 alger_setup action=start 启动。');
 				return lines;
 			}
 		},
@@ -798,13 +599,13 @@ function buildTools(cfg, actions) {
 	const setup = {
 		name: 'alger_setup',
 		description:
-			'让 AlgerMusicPlayer 处于“可被 DSH 控制”的就绪状态：写入 App 配置开启远程控制（仅允许本机回环）、必要时退出并以 CDP 调试端口重启 App、等待 30488/31888/CDP 端口在线。action=check 只检查不动手；action=enable 只写配置（需重启生效）；action=relaunch 一步到位（会退出正在运行的 App，注意会中断当前播放）；action=launch 仅启动 App 并等端口。',
+			'管理插件内置的音乐服务（开源网易云音乐 API，端口 ' + cfg.musicApiPort + '，仅本机回环）：action=check 只检查；action=start 启动（默认）；action=stop 停止。插件加载时服务会自动启动，一般无需手动调用。',
 		parameters: compileParameters({
 			action: {
 				type: 'string',
-				enum: ['check', 'enable', 'launch', 'relaunch'],
+				enum: ['check', 'start', 'stop'],
 				required: true,
-				description: '操作：check=仅检查；enable=开启远程控制配置；launch=启动 App；relaunch=写配置并以 CDP 重启 App（推荐一步到位）。'
+				description: '操作：check=仅检查；start=启动音乐服务；stop=停止音乐服务。'
 			}
 		}),
 		output: {
@@ -812,40 +613,19 @@ function buildTools(cfg, actions) {
 			render: (_args, value) => {
 				const rec = asRecord(value);
 				const lines = (rec.steps || []).map((s) => '· ' + s);
-				lines.push(
-					`就绪状态: 30488=${rec.musicApiUp ? '在线' : '离线'} 31888=${rec.remoteUp ? '在线' : '离线'} CDP=${rec.cdpUp ? '在线' : '离线'}`
-				);
-				if (!rec.ok) lines.push('未能完全就绪，请按提示处理。');
+				lines.push(`音乐服务: ${rec.musicApiUp ? '在线' : '离线'}`);
+				if (!rec.ok) lines.push('未能就绪，请按提示处理。');
 				return lines;
 			}
 		},
 		execute: (rawArgs) => actions.setup(asRecord(rawArgs)),
-		timeoutMs: Math.max(cfg.timeoutMs, 60000)
-	};
-
-	const install = {
-		name: 'alger_install',
-		description:
-			'安装 AlgerMusicPlayer（未安装时）：自动按 CPU 架构（arm64/x64）下载官方 DMG（GitHub 被墙时依次走配置的镜像）、校验完整性、挂载并安装到 /Applications（旧版自动备份为 .bak，不删除）、清理安装包。已安装则直接返回版本。安装完成后调用 alger_setup action=relaunch 一键就绪。',
-		parameters: compileParameters({}),
-		output: {
-			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
-			render: (_args, value) => {
-				const rec = asRecord(value);
-				const lines = (rec.steps || []).map((s) => '· ' + s);
-				if (rec.ok) lines.push(`安装状态: ${rec.alreadyInstalled ? '已安装（无需操作）' : '完成'}${rec.version ? '，版本 ' + rec.version : ''}`);
-				if (rec.guidance) lines.push('提示: ' + rec.guidance);
-				return lines;
-			}
-		},
-		execute: () => actions.install(),
-		timeoutMs: 600000
+		timeoutMs: Math.max(cfg.timeoutMs, 45000)
 	};
 
 	const search = {
 		name: 'alger_search',
 		description:
-			'用 AlgerMusicPlayer 自带的网易云音乐 API（127.0.0.1:' + cfg.musicApiPort + '）搜索。type=1 歌曲 / 10 专辑 / 1000 歌单 / 1004 歌手 / 1009 MV。返回紧凑列表（含歌曲 id），供 alger_play 点歌。',
+			'用插件内置的开源音乐 API 服务（127.0.0.1:' + cfg.musicApiPort + '）搜索。type=1 歌曲 / 10 专辑 / 1000 歌单 / 1004 歌手 / 1009 MV。返回紧凑列表（含歌曲 id），供 alger_play 点歌。',
 		parameters: compileParameters({
 			keywords: { type: 'string', required: true, description: '搜索关键词（歌名 / 歌手 / 歌单名）。' },
 			type: { type: 'integer', description: '搜索类型：1=歌曲(默认)，10=专辑，1000=歌单，1004=歌手，1009=MV。' },
@@ -877,7 +657,7 @@ function buildTools(cfg, actions) {
 	const song = {
 		name: 'alger_song',
 		description:
-			'获取单曲详情：歌曲信息、歌词、可播放直链（VIP/版权受限歌曲可能拿不到直链，但 AlgerMusicPlayer 应用内可正常播放）。',
+			'获取单曲详情：歌曲信息、歌词、可播放直链（部分歌曲因版权限制没有可用直链）。',
 		parameters: compileParameters({
 			id: { type: 'integer', required: true, description: '歌曲 id（来自 alger_search 结果）。' }
 		}),
@@ -885,14 +665,12 @@ function buildTools(cfg, actions) {
 			schema: { type: 'object', properties: { id: { type: 'integer' } } },
 			render: (_args, value) => {
 				const rec = asRecord(value);
-				const lines = [`[${rec.id}] ${rec.name} - ${rec.artists}（${rec.album}，${fmtDuration(rec.durationMs)}）`];
-				lines.push(`播放直链: ${rec.url || '（无/受限，请在 App 内播放）'}`);
-				if (rec.lyric) {
-					const first = String(rec.lyric).split('\n').slice(0, 4).join(' | ');
-					lines.push(`歌词(节选): ${first}`);
-				} else {
-					lines.push('歌词: （无）');
-				}
+				const lines = [`[${rec.id}] ${rec.name}`];
+				if (rec.artists) lines.push('歌手: ' + rec.artists);
+				if (rec.album) lines.push('专辑: ' + rec.album);
+				if (rec.durationMs) lines.push('时长: ' + fmtDuration(rec.durationMs));
+				lines.push(`直链: ${rec.url ? '可用（可播放）' : '无（版权限制）'}`);
+				if (rec.lyric) lines.push('歌词: 有（' + rec.lyric.split('\n').length + ' 行）');
 				return lines;
 			}
 		},
@@ -903,21 +681,20 @@ function buildTools(cfg, actions) {
 	const playlist = {
 		name: 'alger_playlist',
 		description:
-			'获取歌单详情与歌曲列表（通过 App 自带网易云 API，歌单 id 来自 alger_search type=1000 或分享链接的数字部分）。',
+			'获取歌单详情与歌曲列表（通过插件内置的开源音乐 API，歌单 id 来自 alger_search type=1000 或分享链接的数字部分）。',
 		parameters: compileParameters({
-			id: { type: 'integer', required: true, description: '歌单 id。' },
-			limit: { type: 'integer', description: '返回歌曲数，默认 100，最大 500。' }
+			id: { type: 'integer', required: true, description: '歌单 id（来自 alger_search type=1000 或分享链接的数字部分）。' },
+			limit: { type: 'integer', description: '最多返回多少首，默认 100，最大 500。' }
 		}),
 		output: {
-			schema: { type: 'object', properties: { id: { type: 'integer' } } },
+			schema: { type: 'object', properties: { id: { type: 'integer' }, name: { type: 'string' } } },
 			render: (_args, value) => {
 				const rec = asRecord(value);
-				const lines = [
-					`歌单「${rec.name}」共 ${rec.trackCount ?? (rec.tracks || []).length} 首，返回前 ${(rec.tracks || []).length} 首：`
-				];
-				(rec.tracks || []).forEach((t, i) => {
-					lines.push(`${i + 1}. [${t.id}] ${t.name} - ${t.artists}${t.durationMs ? '（' + fmtDuration(t.durationMs) + '）' : ''}`);
+				const lines = [`歌单「${rec.name}」（id=${rec.id}，共 ${rec.trackCount ?? 0} 首，返回 ${(rec.tracks || []).length} 首）：`];
+				(rec.tracks || []).slice(0, 20).forEach((t, i) => {
+					lines.push(`${i + 1}. [${t.id}] ${t.name} - ${t.artists}`);
 				});
+				if ((rec.tracks || []).length > 20) lines.push(`…（还有 ${(rec.tracks || []).length - 20} 首）`);
 				return lines;
 			}
 		},
@@ -928,7 +705,7 @@ function buildTools(cfg, actions) {
 	const play = {
 		name: 'alger_play',
 		description:
-			'点歌：让 AlgerMusicPlayer 立即播放指定歌曲。给 songId 播指定单曲；只给 keyword 则搜索并播最佳匹配。走 CDP 通道（与 App 内“播放全部”同一路径），需要 App 已带调试端口运行（alger_setup action=relaunch 可一键就绪）。',
+			'点歌：立即播放指定歌曲（浏览器内置 <audio> 引擎出声，替换当前播放队列为单曲）。给 songId 播指定单曲；只给 keyword 则搜索并播最佳匹配。',
 		parameters: compileParameters({
 			keyword: { type: 'string', description: '歌名/歌手关键词（与 songId 二选一）。' },
 			songId: { type: 'integer', description: '歌曲 id（来自 alger_search，优先于 keyword）。' }
@@ -938,21 +715,19 @@ function buildTools(cfg, actions) {
 			render: (_args, value) => {
 				const rec = asRecord(value);
 				const lines = (rec.steps || []).map((s) => '· ' + s);
-				if (rec.ok) {
-					lines.push(`已点播: ${rec.playedName}${rec.confirmed ? '（App 状态已确认播放）' : '（播放状态待确认）'}`);
-				}
+				if (rec.ok) lines.push('♪ 已播放：' + (rec.playedName || ''));
 				if (rec.guidance) lines.push('提示: ' + rec.guidance);
 				return lines;
 			}
 		},
 		execute: (rawArgs) => actions.play(asRecord(rawArgs)),
-		timeoutMs: Math.max(cfg.timeoutMs, 45000)
+		timeoutMs: cfg.timeoutMs
 	};
 
 	const queue = {
 		name: 'alger_queue',
 		description:
-			'播放列表操作（走 CDP，需 App 带调试端口运行）：action=add 把指定歌曲（songId 或 keyword 最佳匹配）追加到播放列表末尾；action=add-all 把某关键词的全部搜索结果（limit 控制数量）一键加入播放列表；action=add-next 插入到当前歌曲之后；action=playlist 按 playlistId 整单播放歌单（替换队列并立即播放第一首）；action=playlist-add 把歌单全部歌曲追加到播放列表末尾（不播放）；action=jump 按 index 跳转播放队列中指定位置的歌曲（队列不变）。',
+			'播放列表操作：action=add 把指定歌曲（songId 或 keyword 最佳匹配）追加到播放列表末尾；action=add-all 把某关键词的全部搜索结果（limit 控制数量）一键加入播放列表；action=add-next 插入到当前歌曲之后；action=playlist 按 playlistId 整单播放歌单（替换队列并立即播放第一首）；action=playlist-add 把歌单全部歌曲追加到播放列表末尾（不播放）；action=jump 按 index 跳转播放队列中指定位置的歌曲（队列不变）。',
 		parameters: compileParameters({
 			action: {
 				type: 'string',
@@ -971,24 +746,20 @@ function buildTools(cfg, actions) {
 			render: (_args, value) => {
 				const rec = asRecord(value);
 				const lines = (rec.steps || []).map((s) => '· ' + s);
-				if (rec.ok) {
-					lines.push(
-						`已${rec.mode === 'replace' ? '整单播放' : rec.mode === 'next' ? '插入下一首' : '加入播放列表'} ${rec.added} 首，当前队列共 ${rec.queueLength ?? '?'} 首`
-					);
-					if (rec.playedName) lines.push(`正在播放: ${rec.playedName}`);
-				}
+				if (rec.ok) lines.push(`队列: ${rec.queueLength ?? '?'} 首（本次${rec.added ?? 0} 首，${rec.mode || 'append'}）`);
+				if (rec.playedName) lines.push('♪ 开始播放：' + rec.playedName);
 				if (rec.guidance) lines.push('提示: ' + rec.guidance);
 				return lines;
 			}
 		},
 		execute: (rawArgs) => actions.queue(asRecord(rawArgs)),
-		timeoutMs: Math.max(cfg.timeoutMs, 45000)
+		timeoutMs: cfg.timeoutMs
 	};
 
 	const control = {
 		name: 'alger_control',
 		description:
-			'远程控制 AlgerMusicPlayer 播放：toggle-play 播放/暂停切换、play 播放、pause 暂停、next 下一首、prev 上一首、volume-up 音量加、volume-down 音量减、toggle-favorite 收藏/取消收藏当前歌曲、playmode 切换播放模式（0=列表循环/1=单曲循环/2=随机）。',
+			'播放控制：toggle-play 播放/暂停切换、play 播放、pause 暂停、next 下一首、prev 上一首、volume-up 音量加、volume-down 音量减、toggle-favorite 收藏/取消收藏当前歌曲、playmode 切换播放模式（0=列表循环/1=单曲循环/2=随机）。',
 		parameters: compileParameters({
 			action: {
 				type: 'string',
@@ -998,15 +769,14 @@ function buildTools(cfg, actions) {
 			}
 		}),
 		output: {
-			schema: { type: 'object', properties: { action: { type: 'string' } } },
+			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
 			render: (_args, value) => {
 				const rec = asRecord(value);
-				const lines = [`动作 ${rec.action} 已执行：${rec.message}`];
-				if (rec.status) {
-					lines.push(
-						`当前: ${rec.status.isPlaying ? '播放中' : '已暂停'}${rec.status.song ? ' - ' + rec.status.song.name + (rec.status.song.artists ? '（' + rec.status.song.artists + '）' : '') : ''}`
-					);
-				}
+				const lines = [];
+				if (rec.message) lines.push(rec.message);
+				if (typeof rec.playing === 'boolean') lines.push(rec.playing ? '▶ 播放中' : '⏸ 已暂停');
+				if (rec.song) lines.push('当前: ' + rec.song);
+				if (typeof rec.playMode === 'number') lines.push(`播放模式: ${['列表循环', '单曲循环', '随机'][rec.playMode] || rec.playMode}`);
 				return lines;
 			}
 		},
@@ -1035,7 +805,7 @@ function buildTools(cfg, actions) {
 	const recommend = {
 		name: 'alger_recommend',
 		description:
-			'推荐播放：不知道听什么时，从 App 音乐 API 的推荐歌单中随机挑一个整单播放（替换当前队列并立即开播，能连续播很久；走 CDP，与 alger_queue action=playlist 同路径）。',
+			'推荐播放：不知道听什么时，从音乐 API 的推荐歌单中随机挑一个整单播放（替换当前队列并立即开播，能连续播很久）。',
 		parameters: compileParameters({}),
 		output: {
 			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
@@ -1051,7 +821,7 @@ function buildTools(cfg, actions) {
 		timeoutMs: Math.max(cfg.timeoutMs, 45000)
 	};
 
-	return [status, setup, install, search, song, playlist, play, queue, control, say, recommend];
+	return [status, setup, search, song, playlist, play, queue, control, say, recommend];
 }
 
 /** 读取 POST body（JSON 文本）。 */
@@ -1091,7 +861,8 @@ function registerRoutes(webServer, actions) {
 		},
 		{
 			kind: 'exact',
-			path: '/dsh-alger/command',			handler: async (req, res) => {
+			path: '/dsh-alger/command',
+			handler: async (req, res) => {
 				try {
 					const body = JSON.parse((await readBody(req)) || '{}');
 					json(res, await actions.control(body));
@@ -1149,6 +920,30 @@ function registerRoutes(webServer, actions) {
 		},
 		{
 			kind: 'exact',
+			path: '/dsh-alger/url',
+			handler: async (req, res) => {
+				try {
+					const body = JSON.parse((await readBody(req)) || '{}');
+					json(res, await actions.songUrl(body));
+				} catch (error) {
+					json(res, { ok: false, error: String((error && error.message) || error) });
+				}
+			}
+		},
+		{
+			kind: 'exact',
+			path: '/dsh-alger/playback',
+			handler: async (req, res) => {
+				try {
+					const body = JSON.parse((await readBody(req)) || '{}');
+					json(res, await actions.playback(body));
+				} catch (error) {
+					json(res, { ok: false, error: String((error && error.message) || error) });
+				}
+			}
+		},
+		{
+			kind: 'exact',
 			path: '/dsh-alger/queue',
 			handler: async (req, res) => {
 				try {
@@ -1194,21 +989,11 @@ function registerRoutes(webServer, actions) {
 					json(res, { ok: false, error: String((error && error.message) || error) });
 				}
 			}
-		},
-		{
-			kind: 'exact',
-			path: '/dsh-alger/install',
-			handler: async (_req, res) => {
-				try {
-					json(res, await actions.install());
-				} catch (error) {
-					json(res, { ok: false, error: String((error && error.message) || error) });
-				}
-			}
 		}
 	];
 	for (const route of routes) webServer.register(route);
 }
+
 
 /**
  * 插件入口：解析配置、构造客户端、注册 7 个工具与浮动窗口的 Web 路由。
@@ -1220,16 +1005,45 @@ export function apply(ctx, config) {
 	try {
 		cfg = resolveConfig(config);
 	} catch (error) {
-		console.warn('[dsh-alger-music] ' + (error instanceof Error ? error.message : String(error)));
+		console.warn('[dsh-moony-singer] ' + (error instanceof Error ? error.message : String(error)));
 		cfg = resolveConfig(null);
 	}
 	// 注意：不能直接把 ctx.subprocess.spawn 解构出来传参——宿主的 spawn 是类方法，
 	// 内部读 this.internals，未绑定调用会抛 “Cannot read properties of undefined (reading 'internals')”。
 	// 用箭头包装保持 this 指向 subprocess 服务实例。
 	const spawn = (spec) => ctx.subprocess.spawn(spec);
-	const client = createClient(cfg, spawn);
 
-	// agent 状态跟踪（Codex Pets 式：宠物反映 DSH 在做啥）——订阅宿主事件
+	// 内置播放状态机 + 音乐 API 客户端（不再依赖任何桌面播放器）
+	const player = createPlayer();
+	const client = createClient(cfg);
+
+	// 内置音乐 API 服务（netease-cloud-music-api-alger）自动启动
+	const apiHandle = {
+		handle: null,
+		isUp: false,
+		spawn,
+		serverEntryPath: null
+	};
+	try {
+		apiHandle.serverEntryPath = createRequire(import.meta.url).resolve('netease-cloud-music-api-alger/server.js');
+	} catch (error) {
+		console.warn('[dsh-moony-singer] 未找到内置音乐 API 依赖: ' + ((error && error.message) || String(error)));
+	}
+	if (apiHandle.serverEntryPath) {
+		const result = startApiServer({
+			spawn,
+			serverEntryPath: apiHandle.serverEntryPath,
+			port: cfg.musicApiPort,
+			host: cfg.musicApiHost
+		});
+		if (!result.ok) {
+			console.warn('[dsh-moony-singer] 音乐服务启动失败: ' + (result.error || ''));
+		} else {
+			apiHandle.handle = result.handle;
+		}
+	}
+
+	// agent 状态跟踪（宠物反映 DSH 在做啥）——订阅宿主事件
 	const shared = {};
 	const agentState = new Map();
 	function sidOf(x) {
@@ -1278,7 +1092,7 @@ export function apply(ctx, config) {
 		return best;
 	};
 
-	const actions = buildActions(cfg, client, shared);
+	const actions = buildActions(cfg, client, shared, player, apiHandle);
 	const disposers = [];
 	for (const definition of buildTools(cfg, actions)) {
 		disposers.push(ctx.tools.register(definition));
@@ -1290,6 +1104,10 @@ export function apply(ctx, config) {
 	if (typeof ctx.on === 'function') {
 		ctx.on('dispose', () => {
 			for (const dispose of disposers) dispose();
+			if (apiHandle && apiHandle.handle) {
+				stopApiServer(apiHandle.handle).catch(() => {});
+			}
 		});
 	}
 }
+
