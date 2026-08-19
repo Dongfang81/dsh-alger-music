@@ -145,23 +145,14 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 	}
 
 	/** 取歌曲直链（多级兜底）：
-	 *  1) 音乐 API 直链（有版权时）；
-	 *  2) 歌曲元数据从其他平台匹配（仅当关键词歌手与歌曲一致时，避免匹配到翻唱版）；
+	 *  1) 音乐 API 直链（有版权且歌手与关键词一致时，避免命中翻唱版的直链）；
+	 *  2) 歌曲元数据从其他平台匹配（仅当关键词歌手与歌曲一致时）；
 	 *  3) 原始关键词匹配（网易云下架/列表只有翻唱时，按「歌名 - 歌手」拿原版音源）。
 	 *  返回 null 表示无法播放。 */
 	async function urlFor(song, keyword) {
-		// 1) 音乐 API 直链（含试听判定）
-		if (song && song.id) {
-			try {
-				const url = await client.songUrl(song.id, 'higher');
-				if (url) return url;
-			} catch {
-				/* 继续兜底 */
-			}
-		}
 		const kw = String(keyword || '').trim();
 		const parts = splitKeyword(kw);
-		// 关键词歌手与歌曲歌手是否一致（如「周杰伦 双截棍」vs 列表里的华晨宇版 → 不一致）
+		// 关键词歌手与歌曲歌手是否一致（如「周杰伦 晴天」vs 列表里的 A-LNK 版 → 不一致）
 		const songArtists = ((song && (song.ar || song.artists)) || [])
 			.map((a) => a && a.name)
 			.filter(Boolean)
@@ -169,6 +160,15 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 		const consistent = !parts.artist || !songArtists ||
 			songArtists.includes(parts.artist) ||
 			parts.artist.includes(songArtists.split(/\s+/)[0] || '');
+		// 1) 音乐 API 直链（歌手一致才用，避免拿到翻唱版的直链）
+		if (song && song.id && consistent) {
+			try {
+				const url = await client.songUrl(song.id, 'higher');
+				if (url) return url;
+			} catch {
+				/* 继续兜底 */
+			}
+		}
 		// 2) 歌曲元数据 → 多平台匹配（歌手一致才用，避免匹配到翻唱版）
 		if (song && song.name && consistent) {
 			try {
@@ -181,7 +181,9 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 		// 3) 原始关键词 → 多平台匹配（覆盖网易云下架/翻唱场景，按「歌名 - 歌手」拿原版）
 		if (kw) {
 			try {
-				const hit = await matchSourceByKeyword(parts.name || kw, parts.artist);
+				// 带上目标时长（若歌曲歌手与关键词一致），让平台匹配能校验版本，避免命中现场串烧/翻唱
+				const duration = consistent && song && song.dt ? Number(song.dt) : 0;
+				const hit = await matchSourceByKeyword(parts.name || kw, parts.artist, null, duration);
 				if (hit && hit.url) return hit.url;
 			} catch {
 				/* 返回 null */
@@ -458,7 +460,16 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				if (songs.length === 0)
 					return { ok: false, steps: [...steps, `搜索「${keyword}」无结果`], guidance: '换个关键词试试。' };
 				const nk = normalize(keyword);
-				song = songs.find((s) => normalize(s.name) === nk) || songs[0];
+				const parts = splitKeyword(keyword);
+				// 关键词含歌手时，优先选歌手匹配的歌曲（避免选中同名翻唱版）
+				if (parts.artist) {
+					const byArtist = songs.find((s) => {
+						const names = ((s.ar || s.artists) || []).map((a) => a && a.name).filter(Boolean);
+						return names.some((n) => n.includes(parts.artist) || parts.artist.includes(n));
+					});
+					if (byArtist) song = byArtist;
+				}
+				if (!song) song = songs.find((s) => normalize(s.name) === nk) || songs[0];
 				log(
 					`搜索「${keyword}」命中 ${songs.length} 首，选中: [${song.id}] ${song.name} - ${(song.ar || [])
 						.map((a) => a.name)
