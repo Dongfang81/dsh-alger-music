@@ -148,7 +148,8 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 	 *  1) 音乐 API 直链（有版权且歌手与关键词一致时，避免命中翻唱版的直链）；
 	 *  2) 歌曲元数据从其他平台匹配（仅当关键词歌手与歌曲一致时）；
 	 *  3) 原始关键词匹配（网易云下架/列表只有翻唱时，按「歌名 - 歌手」拿原版音源）。
-	 *  返回 null 表示无法播放。 */
+	 *  返回 { url, displayName? }；displayName 为关键词匹配到的原版标题（与列表歌名不同时提供）；
+	 *  无法播放返回 null。 */
 	async function urlFor(song, keyword) {
 		const kw = String(keyword || '').trim();
 		const parts = splitKeyword(kw);
@@ -164,7 +165,7 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 		if (song && song.id && consistent) {
 			try {
 				const url = await client.songUrl(song.id, 'higher');
-				if (url) return url;
+				if (url) return { url };
 			} catch {
 				/* 继续兜底 */
 			}
@@ -173,7 +174,7 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 		if (song && song.name && consistent) {
 			try {
 				const url = await matchSourceUrl(song);
-				if (url) return url;
+				if (url) return { url };
 			} catch {
 				/* 继续兜底 */
 			}
@@ -184,7 +185,25 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				// 带上目标时长（若歌曲歌手与关键词一致），让平台匹配能校验版本，避免命中现场串烧/翻唱
 				const duration = consistent && song && song.dt ? Number(song.dt) : 0;
 				const hit = await matchSourceByKeyword(parts.name || kw, parts.artist, null, duration);
-				if (hit && hit.url) return hit.url;
+				if (hit && hit.url) {
+					// 关键词匹配到的是原版：显示名用「匹配标题 + 关键词歌手」，替换列表里的翻唱信息
+					const listName = song && song.name ? String(song.name).trim() : '';
+					const hitName = hit.title ? String(hit.title).trim() : parts.name || '';
+					const artistName = parts.artist || '';
+					const listArtist = songArtists || '';
+					const sameName = !listName || hitName === listName;
+					const sameArtist = !artistName || !listArtist || listArtist.includes(artistName) || artistName.includes(listArtist.split(/\s+/)[0] || '');
+					// 歌名或歌手任一与列表不一致 → 带上 displayName（「歌名 - 歌手」格式）与结构化信息
+					if (!sameName || !sameArtist) {
+						return {
+							url: hit.url,
+							displayName: artistName ? hitName + ' - ' + artistName : hitName,
+							matchTitle: hitName,
+							matchArtist: artistName
+						};
+					}
+					return { url: hit.url };
+				}
 			} catch {
 				/* 返回 null */
 			}
@@ -266,8 +285,8 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 			}
 			log(`歌单「${plMeta.name}」共 ${pl?.trackCount ?? songs.length} 首，取得 ${songs.length} 首，从「${songs[0].name}」开始`);
 			const song = player.replaceAndPlay(songs);
-			const firstUrl = await urlFor(song);
-			player.state.currentUrl = firstUrl;
+			const firstHit = await urlFor(song);
+			player.state.currentUrl = firstHit ? firstHit.url : null;
 			player.state.playing = true;
 			shared.setNotice('♫ 推荐歌单：' + plMeta.name + '（' + songs.length + ' 首）');
 			return {
@@ -366,11 +385,11 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 			if (!Number.isFinite(id)) throw new Error('请提供有效的歌曲 id。');
 			const detail = await client.songDetail(id);
 			if (!detail) throw new Error(`未找到歌曲 id=${id}（详情接口无返回）。`);
-			const [lyricText, url] = await Promise.all([
+			const [lyricText, hit] = await Promise.all([
 				client.lyric(id).catch(() => null),
 				urlFor(detail)
 			]);
-			return { ...compactSong(detail), lyric: lyricText, url };
+			return { ...compactSong(detail), lyric: lyricText, url: hit ? hit.url : null };
 		},
 
 		/** 轻量歌词（浮动窗口歌词气泡用，只取 LRC 文本） */
@@ -480,16 +499,26 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 			}
 
 			// 2) 确认可播放（多级兜底：网易云直链 → 元数据匹配 → 原始关键词匹配）
-			const url = await urlFor(song, keyword);
-			if (!url) {
+			const hit = await urlFor(song, keyword);
+			if (!hit) {
 				return {
 					ok: false,
 					steps: [...steps, `「${song.name}」暂无可用播放地址`],
 					guidance: '部分歌曲因版权限制无法直接播放，换一首试试。'
 				};
 			}
+			const url = hit.url;
 
 			// 3) 写入播放状态（客户端轮询到 currentUrl 后自动播放）
+			// 关键词匹配到原版时，歌曲信息修正为「原版标题 - 歌手」（如 A-LNK 版 → 晴天 - 周杰伦）
+			if (hit.matchTitle) {
+				song = {
+					...song,
+					name: hit.matchTitle,
+					ar: hit.matchArtist ? [{ id: 0, name: hit.matchArtist }] : (song.ar || []),
+					artists: hit.matchArtist ? [{ id: 0, name: hit.matchArtist }] : (song.artists || [])
+				};
+			}
 			player.playSong(song);
 			player.state.currentUrl = url;
 			shared.setNotice('♪ 已播放：' + song.name);
@@ -548,9 +577,9 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				if (!Number.isInteger(idx) || idx < 0) throw new Error('jump 需要有效的 index（0 起的整数）。');
 				if (idx >= player.state.queue.length) throw new Error(`队列下标越界: ${idx}（队列共 ${player.state.queue.length} 首）`);
 				const song = player.jump(idx);
-				const url = await urlFor(song);
-				if (!url) return { ok: false, steps: [...steps, `「${song.name}」暂无可用播放地址`], guidance: '换一首试试。' };
-				player.state.currentUrl = url;
+				const hit = await urlFor(song);
+				if (!hit) return { ok: false, steps: [...steps, `「${song.name}」暂无可用播放地址`], guidance: '换一首试试。' };
+				player.state.currentUrl = hit.url;
 				player.state.playing = true;
 				return { ok: true, steps, mode: 'jump', playedName: song ? song.name : '', queueLength: player.state.queue.length };
 			} else {
@@ -567,8 +596,8 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 			// 2) 操作播放状态
 			if (mode === 'replace') {
 				const song = player.replaceAndPlay(songs);
-				const url = await urlFor(song);
-				player.state.currentUrl = url;
+				const hit = await urlFor(song);
+				player.state.currentUrl = hit ? hit.url : null;
 				player.state.playing = true;
 				shared.setNotice('♫ 整单播放：' + (song ? song.name : '') + '（' + songs.length + ' 首）');
 				return { ok: true, steps, mode, added: songs.length, queueLength: player.state.queue.length, playedName: song ? song.name : null };
@@ -601,9 +630,9 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 			if (action === 'next' || action === 'prev') {
 				const song = action === 'next' ? player.next() : player.prev();
 				if (!song) throw new Error('队列为空，无法切换。');
-				const url = await urlFor(song);
-				if (!url) throw new Error(`「${song.name}」暂无可用播放地址。`);
-				player.state.currentUrl = url;
+				const hit = await urlFor(song);
+				if (!hit) throw new Error(`「${song.name}」暂无可用播放地址。`);
+				player.state.currentUrl = hit.url;
 				player.state.playing = true;
 				return { action, message: '已切到：' + song.name, song: song.name, playing: true };
 			}
