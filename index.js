@@ -491,15 +491,18 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 					return { ok: false, steps: [...steps, `搜索「${keyword}」无结果`], guidance: '换个关键词试试。' };
 				const nk = normalize(keyword);
 				const parts = splitKeyword(keyword);
-				// 关键词含歌手时，优先选歌手匹配的歌曲（避免选中同名翻唱版）
-				if (parts.artist) {
-					const byArtist = songs.find((s) => {
-						const names = ((s.ar || s.artists) || []).map((a) => a && a.name).filter(Boolean);
-						return names.some((n) => n.includes(parts.artist) || parts.artist.includes(n));
-					});
-					if (byArtist) song = byArtist;
-				}
-				if (!song) song = songs.find((s) => normalize(s.name) === nk) || songs[0];
+				const nameHit = (s) => normalize(s.name).includes(nk) || nk.includes(normalize(s.name));
+				const artistHit = (s) => {
+					if (!parts.artist) return true; // 无歌手要求则视为命中
+					const names = ((s.ar || s.artists) || []).map((a) => a && a.name).filter(Boolean);
+					return names.some((n) => n.includes(parts.artist) || parts.artist.includes(n));
+				};
+				// 选歌优先级：歌名+歌手都命中 > 歌名命中 > 歌手命中 > 第一条
+				// （避免「周杰伦 双截棍」选中歌名不符的刀马旦，或歌手不符的华晨宇翻唱）
+				song = songs.find((s) => nameHit(s) && artistHit(s))
+					|| songs.find((s) => nameHit(s))
+					|| songs.find((s) => artistHit(s))
+					|| songs[0];
 				log(
 					`搜索「${keyword}」命中 ${songs.length} 首，选中: [${song.id}] ${song.name} - ${(song.ar || [])
 						.map((a) => a.name)
