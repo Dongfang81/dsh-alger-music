@@ -146,7 +146,7 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 
 	/** 取歌曲直链（多级兜底）：
 	 *  1) 音乐 API 直链（有版权时）；
-	 *  2) 歌曲元数据从其他平台匹配；
+	 *  2) 歌曲元数据从其他平台匹配（仅当关键词歌手与歌曲一致时，避免匹配到翻唱版）；
 	 *  3) 原始关键词匹配（网易云下架/列表只有翻唱时，按「歌名 - 歌手」拿原版音源）。
 	 *  返回 null 表示无法播放。 */
 	async function urlFor(song, keyword) {
@@ -159,8 +159,18 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				/* 继续兜底 */
 			}
 		}
-		// 2) 歌曲元数据 → 多平台匹配
-		if (song && song.name) {
+		const kw = String(keyword || '').trim();
+		const parts = splitKeyword(kw);
+		// 关键词歌手与歌曲歌手是否一致（如「周杰伦 双截棍」vs 列表里的华晨宇版 → 不一致）
+		const songArtists = ((song && (song.ar || song.artists)) || [])
+			.map((a) => a && a.name)
+			.filter(Boolean)
+			.join(' ');
+		const consistent = !parts.artist || !songArtists ||
+			songArtists.includes(parts.artist) ||
+			parts.artist.includes(songArtists.split(/\s+/)[0] || '');
+		// 2) 歌曲元数据 → 多平台匹配（歌手一致才用，避免匹配到翻唱版）
+		if (song && song.name && consistent) {
 			try {
 				const url = await matchSourceUrl(song);
 				if (url) return url;
@@ -168,11 +178,9 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				/* 继续兜底 */
 			}
 		}
-		// 3) 原始关键词 → 多平台匹配（覆盖网易云下架/翻唱场景）
-		const kw = String(keyword || '').trim();
+		// 3) 原始关键词 → 多平台匹配（覆盖网易云下架/翻唱场景，按「歌名 - 歌手」拿原版）
 		if (kw) {
 			try {
-				const parts = splitKeyword(kw);
 				const hit = await matchSourceByKeyword(parts.name || kw, parts.artist);
 				if (hit && hit.url) return hit.url;
 			} catch {
