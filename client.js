@@ -41,10 +41,17 @@ window.__ModuleLoader__.load({
 			Object.freeze({ id: "drift", name: "Moony · Drift", role: "沉浸漂流者", ear: "drift", tail: "comet", motion: "drift", colors: Object.freeze({ ear: "#6799A2", highlight: "#B9E0E2", rim: "#D5F2F1" }) }),
 			Object.freeze({ id: "spark", name: "Moony · Spark", role: "新声探索者", ear: "spark", tail: "none", motion: "scan", colors: Object.freeze({ ear: "#C88322", highlight: "#F2D16D", rim: "#FFE4A3" }) }),
 			Object.freeze({ id: "chorus", name: "Moony · Chorus", role: "跟唱共鸣者", ear: "chorus", tail: "curl", motion: "chorus", colors: Object.freeze({ ear: "#B85388", highlight: "#F3A6C7", rim: "#FFD0E3" }) }),
-			Object.freeze({ id: "hush", name: "Moony · Hush", role: "安静陪伴者", ear: "hush", tail: "none", motion: "hush", colors: Object.freeze({ ear: "#647654", highlight: "#B9C5A6", rim: "#DBE3CE" }) })
+			Object.freeze({ id: "hush", name: "Moony · Hush", role: "安静陪伴者", ear: "hush", tail: "none", motion: "hush", colors: Object.freeze({ ear: "#647654", highlight: "#B9C5A6", rim: "#DBE3CE" }) }),
+			Object.freeze({ id: "loop", name: "Moony · Loop", role: "循环收藏家", ear: "loop", tail: "none", motion: "loop", colors: Object.freeze({ ear: "#238E91", highlight: "#7FE2D7", rim: "#BFF7EE" }) }),
+			Object.freeze({ id: "bass", name: "Moony · Bass", role: "低频承载者", ear: "bass", tail: "none", motion: "bass", colors: Object.freeze({ ear: "#3E365C", highlight: "#82739F", rim: "#C9B9E6" }) }),
+			Object.freeze({ id: "solo", name: "Moony · Solo", role: "独奏聆听者", ear: "solo", tail: "none", motion: "solo", colors: Object.freeze({ ear: "#B7802D", highlight: "#F2CA75", rim: "#FFE6A8" }) }),
+			Object.freeze({ id: "vinyl", name: "Moony · Vinyl", role: "黑胶漫游者", ear: "vinyl", tail: "needle", motion: "vinyl", colors: Object.freeze({ ear: "#7A3F4D", highlight: "#D49A8A", rim: "#F2C9B8" }) }),
+			Object.freeze({ id: "aurora", name: "Moony · Aurora", role: "氛围织光者", ear: "aurora", tail: "none", motion: "aurora", colors: Object.freeze({ ear: "#5273A8", highlight: "#9FE6D8", rim: "#D1F7EC" }) }),
+			Object.freeze({ id: "static", name: "Moony · Static", role: "实验噪声者", ear: "static", tail: "none", motion: "static", colors: Object.freeze({ ear: "#5D6372", highlight: "#AEB7C8", rim: "#C9FF76" }) })
 		]);
 		var MOONY_BY_ID = Object.freeze(MOONY_CATALOG.reduce(function (out, pet) { out[pet.id] = pet; return out; }, {}));
-		var MOONY_SOFT_GLOW_EARS = Object.freeze({ pulse: true, echo: true, hush: true });
+		var MOONY_SOFT_GLOW_EARS = Object.freeze({ pulse: true, echo: true, hush: true, aurora: true });
+		var MOONY_PHASE_CIRCUMFERENCE = 188.5;
 
 		function getMoony(id) {
 			return typeof id === "string" && Object.prototype.hasOwnProperty.call(MOONY_BY_ID, id) ? MOONY_BY_ID[id] : MOONY_BY_ID.classic;
@@ -120,6 +127,39 @@ window.__ModuleLoader__.load({
 		function resolveMoonyLight(pet, status, isPlaying, ambientColor) {
 			if (status !== "idle") return MOONY_STATUS[status].signal;
 			return isPlaying ? (normalizeHexColor(ambientColor) || pet.colors.rim) : pet.colors.rim;
+		}
+
+		function resolveMoonPhase(value) {
+			var number = Number(value);
+			var progress = Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
+			var opacity = progress <= .92 ? 1 : Math.max(0, (1 - progress) / .08);
+			return { progress: progress, opacity: Number(opacity.toFixed(3)) };
+		}
+
+		function bindAudioBuffering(audio, onChange) {
+			var starts = ["loadstart", "waiting", "stalled"];
+			var stops = ["canplay", "canplaythrough", "playing", "seeked", "ended", "error"];
+			var start = function () { onChange(true); };
+			var stop = function () { onChange(false); };
+			starts.forEach(function (name) { audio.addEventListener(name, start); });
+			stops.forEach(function (name) { audio.addEventListener(name, stop); });
+			return function () {
+				starts.forEach(function (name) { audio.removeEventListener(name, start); });
+				stops.forEach(function (name) { audio.removeEventListener(name, stop); });
+			};
+		}
+
+		function MoonyPhaseRing(props) {
+			var phase = resolveMoonPhase(props && props.progress);
+			var offset = Number((MOONY_PHASE_CIRCUMFERENCE * (1 - phase.progress)).toFixed(2));
+			var buffering = Boolean(props && props.buffering);
+			return h("svg", {
+				className: "dsa-moony-phase" + (buffering ? " buffering" : ""), viewBox: "0 0 64 64",
+				role: "img", "aria-label": "播放进度 " + Math.round(phase.progress * 100) + "%"
+			}, [
+				h("circle", { key: "progress", className: "dsa-moony-phase-progress", cx: 32, cy: 32, r: 30, style: { strokeDasharray: MOONY_PHASE_CIRCUMFERENCE, strokeDashoffset: offset, opacity: phase.opacity } }),
+				h("circle", { key: "gap", className: "dsa-moony-phase-gap", cx: 32, cy: 32, r: 30 })
+			]);
 		}
 
 		function MoonySoftHalos() {
@@ -203,7 +243,8 @@ window.__ModuleLoader__.load({
 				pet.tail !== "none" ? h("span", { key: "tail", className: "dsa-moony-tail", "data-moony-tail": pet.tail }) : null,
 				h("span", { key: "left", className: "dsa-moony-ear left" }, h("i", { className: "dsa-moony-signal" })),
 				h("span", { key: "right", className: "dsa-moony-ear right" }, h("i", { className: "dsa-moony-signal" })),
-				h("span", { key: "face", className: "dsa-moony-face" }, value.faceMode === "media" ? h("img", { key: value.mediaUrl, src: value.mediaUrl, alt: "", draggable: false, onLoad: function (event) { event.currentTarget.hidden = false; }, onError: function (event) { event.currentTarget.hidden = true; } }) : null)
+				h("span", { key: "face", className: "dsa-moony-face" }, value.faceMode === "media" ? h("img", { key: value.mediaUrl, src: value.mediaUrl, alt: "", draggable: false, onLoad: function (event) { event.currentTarget.hidden = false; }, onError: function (event) { event.currentTarget.hidden = true; } }) : null),
+				h(MoonyPhaseRing, { key: "phase", progress: input.playbackProgress, buffering: input.isBuffering })
 			];
 			return h("div", {
 				className: "dsa-pet dsa-moony-pet" + (input.isPlaying ? " singing" : "") + " dsa-agent-" + value.status,
@@ -214,8 +255,20 @@ window.__ModuleLoader__.load({
 		}
 
 		/* ---------- API ---------- */
+		// 页面播放者 token：本页面的唯一身份，交互时上报服务端成为“播放者”（防多页面串音）
+		var PAGE_TOKEN = (function () {
+			try {
+				var k = "dsh-moony-singer:page-token";
+				var t = sessionStorage.getItem(k);
+				if (!t) { t = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); sessionStorage.setItem(k, t); }
+				return t;
+			} catch { return "p" + Date.now().toString(36); }
+		})();
 		function getState() {
-			return fetch("/dsh-alger/state", { cache: "no-store" }).then(function (r) { return r.json(); });
+			return fetch("/dsh-alger/state?token=" + encodeURIComponent(PAGE_TOKEN), { cache: "no-store" }).then(function (r) { return r.json(); });
+		}
+		function claimPlayback(force) {
+			return post("/dsh-alger/claim", { token: PAGE_TOKEN, force: !!force }).catch(function () { /* 忽略 */ });
 		}
 		function post(path, body) {
 			return fetch(path, {
@@ -285,6 +338,7 @@ window.__ModuleLoader__.load({
 			".dsa-pet:active{cursor:grabbing}.dsa-moony-rhythm{position:absolute;inset:0;display:block}",
 			".dsa-moony-face{position:absolute;inset:0;z-index:2;display:block;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,.9);background:linear-gradient(145deg,#f5f2f8 4%,#d6cfdf 58%,#aaa1b9);box-shadow:inset 4px 5px 8px rgba(255,255,255,.58),inset -6px -7px 11px rgba(55,40,76,.14),0 8px 18px rgba(0,0,0,.34)}",
 			".dsa-moony-face img{width:100%;height:100%;display:block;object-fit:cover}",
+			".dsa-moony-phase{position:absolute;inset:-1px;z-index:2;width:66px;height:66px;overflow:visible;pointer-events:none;transform:rotate(-90deg)}.dsa-moony-phase circle{fill:none;vector-effect:non-scaling-stroke;transform-origin:32px 32px}.dsa-moony-phase-progress{stroke:var(--moony-light);stroke-width:1.35;stroke-linecap:round;filter:drop-shadow(0 0 2px var(--moony-light)) drop-shadow(0 0 5px var(--moony-light-soft))}.dsa-moony-phase-gap{opacity:0;stroke:var(--moony-light);stroke-width:1.6;stroke-linecap:round;stroke-dasharray:138 50.5;filter:drop-shadow(0 0 4px var(--moony-light-soft))}.dsa-moony-phase.buffering .dsa-moony-phase-progress{opacity:.24!important}.dsa-moony-phase.buffering .dsa-moony-phase-gap{opacity:.9;animation:dsa-moony-phase-flow 1.45s linear infinite}",
 			".dsa-moony-ear{position:absolute;z-index:3;display:block;background:linear-gradient(145deg,var(--moony-ear-highlight),var(--moony-ear));border:3px solid var(--moony-rim);box-shadow:inset 3px 3px 6px rgba(255,255,255,.2),inset -4px -5px 7px rgba(30,18,60,.18),0 0 9px var(--moony-rim-soft),0 5px 9px rgba(0,0,0,.2);filter:drop-shadow(0 0 5px var(--moony-light-soft));transform-origin:50% 90%;transition:border-color .35s,filter .35s,box-shadow .35s}",
 			".dsa-moony-ear::before{content:'';position:absolute;inset:6px;border:1px solid var(--moony-light-soft);border-radius:inherit;background:radial-gradient(circle at 35% 28%,var(--moony-light-soft),transparent 72%);box-shadow:inset 0 0 8px var(--moony-light-soft);transition:background .5s,border-color .5s,box-shadow .5s}",
 			".dsa-moony-soft-halos{position:absolute;inset:0;z-index:2;display:block;pointer-events:none}.dsa-moony-soft-halo{position:absolute;display:block;border-radius:50%;background:var(--moony-light-soft);filter:blur(7px);opacity:.82;transform-origin:50% 90%;transition:background .5s}",
@@ -296,12 +350,19 @@ window.__ModuleLoader__.load({
 			".dsa-moony-pet[data-moony-ear='spark'] .left{left:5px;top:-31px;width:19px;height:50px;border-radius:60% 40% 18% 28%;transform:rotate(-23deg)}.dsa-moony-pet[data-moony-ear='spark'] .right{right:-7px;top:-12px;width:37px;height:29px;border-radius:70% 30% 55% 45%;transform:rotate(8deg)}",
 			".dsa-moony-pet[data-moony-ear='chorus'] .dsa-moony-ear{top:-23px;width:39px;height:40px;clip-path:polygon(50% 0,65% 39%,100% 20%,76% 60%,98% 84%,56% 75%,40% 100%,29% 68%,0 75%,25% 47%)}.dsa-moony-pet[data-moony-ear='chorus'] .left{left:-7px;transform:rotate(-9deg)}.dsa-moony-pet[data-moony-ear='chorus'] .right{right:-7px;transform:scaleX(-1) rotate(-9deg)}",
 			".dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-ear{top:-28px;width:37px;height:32px;border-radius:70% 30% 62% 38%;clip-path:polygon(0 10%,100% 0,78% 100%,18% 85%)}.dsa-moony-pet[data-moony-ear='hush'] .left{left:-9px;transform:rotate(-22deg)}.dsa-moony-pet[data-moony-ear='hush'] .right{right:-9px;transform:scaleX(-1) rotate(-22deg)}",
-			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-soft-halo{top:-25px;width:27px;height:45px}.dsa-moony-pet[data-moony-ear='echo'] .dsa-moony-soft-halo{top:-16px;width:39px;height:31px}.dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-soft-halo{top:-26px;width:37px;height:30px}",
+			".dsa-moony-pet[data-moony-ear='loop'] .dsa-moony-ear{top:-23px;width:33px;height:38px;border:5px solid var(--moony-rim);border-radius:50%;background:transparent;box-shadow:inset 0 0 8px var(--moony-light-soft),0 0 9px var(--moony-rim-soft)}.dsa-moony-pet[data-moony-ear='loop'] .dsa-moony-ear::before{inset:5px;background:transparent}.dsa-moony-pet[data-moony-ear='loop'] .left{left:-4px;transform:rotate(-18deg)}.dsa-moony-pet[data-moony-ear='loop'] .right{right:-4px;transform:rotate(18deg)}",
+			".dsa-moony-pet[data-moony-ear='bass'] .dsa-moony-ear{top:-10px;width:31px;height:24px;border-radius:58% 42% 34% 28%}.dsa-moony-pet[data-moony-ear='bass'] .left{left:-2px;transform:rotate(-10deg)}.dsa-moony-pet[data-moony-ear='bass'] .right{right:-2px;transform:rotate(10deg)}",
+			".dsa-moony-pet[data-moony-ear='solo'] .left{left:4px;top:-35px;width:21px;height:54px;border-radius:64% 36% 24% 30%;transform:rotate(-8deg)}.dsa-moony-pet[data-moony-ear='solo'] .right{right:-3px;top:-13px;width:34px;height:27px;border-radius:68% 32% 55% 35%;transform:rotate(13deg)}",
+			".dsa-moony-pet[data-moony-ear='vinyl'] .dsa-moony-ear{top:-15px;width:29px;height:29px;border-radius:50%;box-shadow:inset 0 0 0 5px rgba(34,20,26,.18),inset 0 0 0 7px var(--moony-light-soft),0 0 9px var(--moony-rim-soft)}.dsa-moony-pet[data-moony-ear='vinyl'] .left{left:-3px}.dsa-moony-pet[data-moony-ear='vinyl'] .right{right:-3px}",
+			".dsa-moony-pet[data-moony-ear='aurora'] .dsa-moony-ear{top:-35px;width:40px;height:55px;border-radius:70% 30% 62% 38%;clip-path:polygon(4% 2%,72% 0,100% 32%,73% 61%,91% 100%,40% 79%,10% 100%,22% 50%);background:linear-gradient(160deg,var(--moony-ear-highlight),var(--moony-ear) 55%,#A47DCA)}.dsa-moony-pet[data-moony-ear='aurora'] .left{left:-13px;transform:rotate(-14deg)}.dsa-moony-pet[data-moony-ear='aurora'] .right{right:-13px;transform:scaleX(-1) rotate(-14deg)}",
+			".dsa-moony-pet[data-moony-ear='static'] .dsa-moony-ear{top:-25px;width:29px;height:43px;border-radius:24% 48% 28% 42%;clip-path:polygon(12% 0,100% 7%,76% 39%,100% 55%,62% 100%,21% 78%,0 35%)}.dsa-moony-pet[data-moony-ear='static'] .left{left:0;transform:rotate(-12deg)}.dsa-moony-pet[data-moony-ear='static'] .right{right:0;transform:scaleX(-1) rotate(-12deg)}",
+			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-soft-halo{top:-25px;width:27px;height:45px}.dsa-moony-pet[data-moony-ear='echo'] .dsa-moony-soft-halo{top:-16px;width:39px;height:31px}.dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-soft-halo{top:-26px;width:37px;height:30px}.dsa-moony-pet[data-moony-ear='aurora'] .dsa-moony-soft-halo{top:-31px;width:40px;height:51px}",
 			".dsa-moony-tail{position:absolute;z-index:1;pointer-events:none;filter:drop-shadow(0 0 6px var(--moony-light-soft));transition:filter .5s}.dsa-moony-tail[data-moony-tail='orbit']{right:-8px;bottom:-5px;width:38px;height:32px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(25deg)}",
 			".dsa-moony-tail[data-moony-tail='comet']{right:-17px;bottom:5px;width:42px;height:17px;border-radius:70% 30% 70% 30%;background:linear-gradient(90deg,var(--moony-ear-highlight),var(--moony-ear));transform:rotate(24deg)}",
 			".dsa-moony-tail[data-moony-tail='curl']{right:-7px;bottom:-6px;width:31px;height:31px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(12deg)}",
-			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='float'] .dsa-moony-ear{animation:dsa-moony-idle-float 3.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='beat'] .dsa-moony-ear{animation:dsa-moony-idle-beat 1.15s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-ear{animation:dsa-moony-idle-orbit 3.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-ear{animation:dsa-moony-idle-drift 4.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='scan'] .dsa-moony-ear{animation:dsa-moony-idle-scan 2.1s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-ear{animation:dsa-moony-idle-chorus 2.7s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='hush'] .dsa-moony-ear{animation:dsa-moony-idle-hush 5s ease-in-out infinite alternate}",
-			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-tail{animation:dsa-moony-idle-tail-orbit 2.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-tail{animation:dsa-moony-idle-tail-drift 3.6s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-tail{animation:dsa-moony-idle-tail-chorus 1.4s ease-in-out infinite alternate}",
+			".dsa-moony-tail[data-moony-tail='needle']{right:-19px;bottom:2px;width:44px;height:27px;border-right:3px solid var(--moony-ear);border-bottom:3px solid var(--moony-ear);border-radius:0 0 17px 0;transform:rotate(10deg);transform-origin:10% 90%}.dsa-moony-tail[data-moony-tail='needle']::after{content:'';position:absolute;right:-4px;bottom:-4px;width:7px;height:7px;border-radius:50%;background:var(--moony-rim);box-shadow:0 0 6px var(--moony-light-soft)}",
+			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='float'] .dsa-moony-ear{animation:dsa-moony-idle-float 3.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='beat'] .dsa-moony-ear{animation:dsa-moony-idle-beat 1.15s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-ear{animation:dsa-moony-idle-orbit 3.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-ear{animation:dsa-moony-idle-drift 4.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='scan'] .dsa-moony-ear{animation:dsa-moony-idle-scan 2.1s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-ear{animation:dsa-moony-idle-chorus 2.7s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='hush'] .dsa-moony-ear{animation:dsa-moony-idle-hush 5s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='loop'] .dsa-moony-ear{animation:dsa-moony-idle-loop 2.6s ease-in-out infinite}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='bass'] .dsa-moony-ear{animation:dsa-moony-idle-bass 2.2s ease-in-out infinite}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='solo'] .dsa-moony-ear{animation:dsa-moony-idle-solo 3s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='vinyl'] .dsa-moony-ear{animation:dsa-moony-idle-vinyl 4s linear infinite}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='aurora'] .dsa-moony-ear{animation:dsa-moony-idle-aurora 5.4s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='static'] .dsa-moony-ear{animation:dsa-moony-idle-static 4.6s steps(1,end) infinite}",
+			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-tail{animation:dsa-moony-idle-tail-orbit 2.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-tail{animation:dsa-moony-idle-tail-drift 3.6s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-tail{animation:dsa-moony-idle-tail-chorus 1.4s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='vinyl'] .dsa-moony-tail{animation:dsa-moony-idle-tail-vinyl 4.8s ease-in-out infinite alternate}",
 			".dsa-agent-running .dsa-moony-ear,.dsa-agent-waiting .dsa-moony-ear,.dsa-agent-failed .dsa-moony-ear,.dsa-agent-review .dsa-moony-ear{border-color:var(--moony-signal);filter:drop-shadow(0 0 5px var(--moony-signal))}",
 			".dsa-moony-pet[data-moony-soft-glow='true'] .dsa-moony-ear{filter:none}",
 			".dsa-agent-running .dsa-moony-ear{animation:dsa-moony-running .52s ease-in-out infinite alternate}.dsa-agent-running .dsa-moony-ear.right{animation-direction:alternate-reverse}.dsa-agent-waiting .dsa-moony-ear{animation:dsa-moony-waiting 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-ear{animation:dsa-moony-failed .24s linear 3}.dsa-agent-review .dsa-moony-ear{animation:dsa-moony-review 1s ease-in-out infinite alternate}",
@@ -590,6 +651,11 @@ window.__ModuleLoader__.load({
 				getState().then(function (s) { setState(s); }).catch(function () { /* 忽略瞬时失败 */ });
 			}, []);
 
+			// 挂载时声明一次播放者身份（首个页面出声；之后交互可抢占）
+			React.useEffect(function () {
+				claimPlayback();
+			}, []);
+
 			// 轮询
 			React.useEffect(function () {
 				refresh();
@@ -625,20 +691,8 @@ window.__ModuleLoader__.load({
 				audio.addEventListener("error", function () {
 					reportPlayback({ playing: false, position: 0, duration: audio.duration || 0, ready: true });
 				});
-				// 多页面防串音：页面隐藏时暂停本地音频（不改变服务端状态），
-				// 只有当前可见的页面出声；回到可见且服务端在播时恢复。
-				var onVisibility = function () {
-					if (document.hidden) {
-						if (!audio.paused) audio.pause();
-					} else if (audio.src && stateRef.current && stateRef.current.playing && stateRef.current.playing.isPlaying) {
-						var pp = audio.play();
-						if (pp && typeof pp.catch === "function") pp.catch(function () {});
-					}
-				};
-				document.addEventListener("visibilitychange", onVisibility);
 				audioRef.current = audio;
 				return function () {
-					document.removeEventListener("visibilitychange", onVisibility);
 					try { audio.pause(); audio.src = ""; } catch { /* ignore */ }
 					if (audio.parentNode) audio.parentNode.removeChild(audio);
 					audioRef.current = null;
@@ -664,6 +718,9 @@ window.__ModuleLoader__.load({
 				if (!audio) return;
 				var st = state || {};
 				var url = st.currentUrl || null;
+				// 播放权：只有当前页面是“播放者”（用户交互过、服务端确认）才出声，
+				// 其他页面（如后台打开的 Codex 浏览器）保持静音，避免多页面串音
+				var isOwner = Boolean(st.isAudioOwner);
 				// 无当前曲（清空播放列表等）：停止并释放
 				if (!url) {
 					if (lastUrlRef.current) lastUrlRef.current = null;
@@ -675,17 +732,19 @@ window.__ModuleLoader__.load({
 					lastUrlRef.current = url;
 					audio.src = url;
 					audio.volume = typeof st.volume === "number" ? st.volume : 0.8;
-					var p = audio.play();
-					if (p && typeof p.catch === "function") p.catch(function () { /* 浏览器阻止自动播放时静默 */ });
+					if (isOwner) {
+						var p = audio.play();
+						if (p && typeof p.catch === "function") p.catch(function () { /* 浏览器阻止自动播放时静默 */ });
+					}
 				} else if (typeof st.volume === "number" && Math.abs(audio.volume - st.volume) > 0.01) {
 					audio.volume = st.volume;
 				}
-				// 播放/暂停同步（服务端控制 → 浏览器执行）
+				// 播放/暂停同步（服务端控制 → 浏览器执行；仅播放者页出声）
 				var stPlaying = Boolean(st.playing && st.playing.isPlaying);
-				if (stPlaying && audio.paused && audio.src) {
+				if (isOwner && stPlaying && audio.paused && audio.src) {
 					var pp = audio.play();
 					if (pp && typeof pp.catch === "function") pp.catch(function () {});
-				} else if (!stPlaying && !audio.paused && audio.src) {
+				} else if ((!isOwner || !stPlaying) && !audio.paused && audio.src) {
 					audio.pause();
 				}
 			}, [state]);
@@ -1028,7 +1087,8 @@ window.__ModuleLoader__.load({
 				var petImg = artistInfo && artistInfo.avatar ? artistInfo.avatar : (playing ? playing.albumPic : null);
 				return h("div", {
 					className: "dsa-pet-wrap",
-					style: { left: petX, top: pos ? pos.y : window.innerHeight - 180 }
+					style: { left: petX, top: pos ? pos.y : window.innerHeight - 180 },
+					onPointerDownCapture: function () { claimPlayback(true); }
 				}, [
 					h("div", {
 						ref: bubbleRef,
@@ -1067,7 +1127,8 @@ window.__ModuleLoader__.load({
 
 			return h("div", {
 				ref: cardRef,
-				style: { position: "fixed", left: pos ? pos.x : window.innerWidth - WIDTH - 18, top: pos ? pos.y : window.innerHeight - 300, zIndex: 2147483000 }
+				style: { position: "fixed", left: pos ? pos.x : window.innerWidth - WIDTH - 18, top: pos ? pos.y : window.innerHeight - 300, zIndex: 2147483000 },
+				onPointerDownCapture: function () { claimPlayback(true); }
 			}, [
 				h("div", { className: "dsa-card" }, [
 					// 头部（拖动手柄）：封面 + 标题 + 右侧[已连接][切换形态]
