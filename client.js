@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 /**
- * dsh-alger-music —— Client half（浏览器浮动播放器）。
+ * dsh-moony-singer —— Client half（浏览器浮动播放器）。
  *
  * 由 DSH web 的模块加载器（window.__ModuleLoader__.load）挂载：右下角浮动小窗，
- * 实时展示 AlgerMusicPlayer 的播放状态，提供 播放/暂停、上一首、下一首、音量±、
- * 搜索点歌 与“一键就绪”（开启 App 远程控制并带调试口重启）。所有数据经插件
- * 服务端路由 /dsh-alger/* 中转（本机 30488/31888/CDP 不直接暴露给页面）。
+ * 实时展示内置播放引擎的状态，提供 播放/暂停、上一首、下一首、收藏、播放模式、
+ * 搜索点歌 与内置音乐服务管理。播放由页面内 <audio> 元素出声，
+ * 状态经插件服务端路由 /dsh-alger/* 中转（本机音乐 API 不直接暴露给页面）。
  */
 window.__ModuleLoader__.load({
 	id: "dsh-moony-singer",
@@ -65,12 +65,33 @@ window.__ModuleLoader__.load({
 			return safeId;
 		}
 
+		function MoonyThumbnail(props) {
+			var pet = getMoony(props && props.petId);
+			var style = { "--moony-ear": pet.colors.ear, "--moony-ear-highlight": pet.colors.highlight, "--moony-rim": pet.colors.rim, "--moony-signal": "transparent" };
+			return h("span", { className: "dsa-moony-thumb", "aria-hidden": true }, h("span", {
+				className: "dsa-moony-pet", "data-moony-id": pet.id, "data-moony-ear": pet.ear, "data-moony-motion": pet.motion, style: style
+			}, h("span", { className: "dsa-moony-rhythm" }, [
+				pet.tail !== "none" ? h("span", { key: "tail", className: "dsa-moony-tail", "data-moony-tail": pet.tail }) : null,
+				h("span", { key: "left", className: "dsa-moony-ear left" }),
+				h("span", { key: "right", className: "dsa-moony-ear right" }),
+				h("span", { key: "face", className: "dsa-moony-face" })
+			])));
+		}
+
 		function MoonyPicker(props) {
 			var selectedId = getMoony(props && props.selectedId).id;
 			var onSelect = props && typeof props.onSelect === "function" ? props.onSelect : function () {};
-			return h("div", { className: "dsa-moony-picker", role: "group", "aria-label": "选择 Moony" }, MOONY_CATALOG.map(function (pet) {
+			return h("div", { className: "dsa-moony-menu", role: "menu", "aria-label": "选择 Moony" }, MOONY_CATALOG.map(function (pet) {
 				var selected = pet.id === selectedId;
-				return h("button", { key: pet.id, type: "button", className: "dsa-moony-choice" + (selected ? " on" : ""), "data-moony-choice": pet.id, "aria-pressed": selected, title: pet.name + " · " + pet.role, onClick: function () { onSelect(pet.id); } }, pet.id === "classic" ? "Classic" : pet.name.split("·").pop().trim());
+				return h("button", {
+					key: pet.id, type: "button", role: "menuitemradio", className: "dsa-moony-option" + (selected ? " on" : ""),
+					"data-moony-choice": pet.id, "aria-checked": selected, title: pet.name + " · " + pet.role,
+					onClick: function () { onSelect(pet.id); }
+				}, [
+					MoonyThumbnail({ petId: pet.id }),
+					h("span", { className: "dsa-moony-option-copy" }, [h("strong", null, pet.name), h("small", null, pet.role)]),
+					h("span", { className: "dsa-moony-option-check" }, selected ? "✓" : "")
+				]);
 			}));
 		}
 
@@ -111,13 +132,12 @@ window.__ModuleLoader__.load({
 			}).then(function (r) { return r.json(); });
 		}
 		var command = function (action) { return post("/dsh-alger/command", { action: action }); };
-		var searchMusic = function (keywords, type) { return post("/dsh-alger/search", { keywords: keywords, type: type || 1, limit: 8 }); };
-		var playSong = function (payload) { return post("/dsh-alger/play", payload); };
+		var searchMusic = function (keywords, type) { return post("/dsh-alger/search", { keywords: keywords, type: type || 1, limit: 30 }); };
 		var queueApi = function (payload) { return post("/dsh-alger/queue", payload); };
 		var setupApp = function (action) { return post("/dsh-alger/setup", { action: action }); };
-		var installApp = function () { return post("/dsh-alger/install", {}); };
 		var getLyric = function (id) { return post("/dsh-alger/lyric", { id: id }); };
 		var getArtist = function (id) { return post("/dsh-alger/artist", { id: id }); };
+		var reportPlayback = function (payload) { return post("/dsh-alger/playback", payload); };
 
 		/* ---------- LRC 解析与歌词行定位 ----------
 		 * 历史事故（教训）：同一个全局正则对象绝不能在 exec() 循环里又被 replace() 使用
@@ -158,36 +178,44 @@ window.__ModuleLoader__.load({
 			return cur;
 		}
 
+		// 秒 → m:ss（进度条用）
+		function fmtClock(sec) {
+			if (!Number.isFinite(sec) || sec <= 0) return "0:00";
+			var s = Math.floor(sec);
+			return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+		}
+
 		/* ---------- 样式 ---------- */
 		var MOONY_CSS = [
 			".dsa-pet{position:relative;width:64px;height:64px;cursor:grab;overflow:visible;user-select:none}",
-			".dsa-moony-picker-row{margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.1)}.dsa-moony-picker-label{display:block;margin-bottom:5px;font-size:10px;color:rgba(255,255,255,.55)}",
-			".dsa-moony-picker{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px}.dsa-moony-choice{flex:none;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(255,255,255,.05);color:rgba(255,255,255,.72);padding:3px 8px;font:10px/16px system-ui;cursor:pointer}",
-			".dsa-moony-choice:hover{background:rgba(255,255,255,.11)}.dsa-moony-choice.on{border-color:var(--dsw-alias-accent-6,#8b5cf6);background:rgba(139,92,246,.2);color:#fff}",
+			".dsa-moony-thumb{position:relative;display:block;flex:none;width:30px;height:30px;overflow:visible}.dsa-moony-thumb>.dsa-moony-pet{position:relative;display:block;width:64px;height:64px;transform:scale(.42);transform-origin:2px 2px;pointer-events:none}.dsa-moony-thumb .dsa-moony-rhythm,.dsa-moony-thumb .dsa-moony-ear,.dsa-moony-thumb [data-moony-tail]{animation:none!important}",
 			".dsa-pet:active{cursor:grabbing}.dsa-moony-rhythm{position:absolute;inset:0;display:block}",
+			".dsa-moony-pet[data-moony-motion='float'].singing{--moony-beat:.86s}.dsa-moony-pet[data-moony-motion='beat'].singing{--moony-beat:.44s}.dsa-moony-pet[data-moony-motion='orbit'].singing{--moony-beat:1.6s}.dsa-moony-pet[data-moony-motion='drift'].singing{--moony-beat:1.35s}.dsa-moony-pet[data-moony-motion='scan'].singing{--moony-beat:.72s}.dsa-moony-pet[data-moony-motion='chorus'].singing{--moony-beat:.62s}.dsa-moony-pet[data-moony-motion='hush'].singing{--moony-beat:1.8s}",
 			".dsa-moony-pet[data-moony-motion='float'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-float .86s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='beat'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-beat .44s cubic-bezier(.4,0,.2,1) infinite alternate}.dsa-moony-pet[data-moony-motion='orbit'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-orbit 1.6s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='drift'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-drift 1.35s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-scan .72s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-chorus .62s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-rhythm{animation:dsa-moony-listen-hush 1.8s ease-in-out infinite alternate}",
-			".dsa-moony-face{position:absolute;inset:0;z-index:3;display:block;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,.9);background:linear-gradient(145deg,#f5f2f8 4%,#d6cfdf 58%,#aaa1b9);box-shadow:inset 4px 5px 8px rgba(255,255,255,.58),inset -6px -7px 11px rgba(55,40,76,.14),0 8px 18px rgba(0,0,0,.34)}",
+			".dsa-moony-face{position:absolute;inset:0;z-index:2;display:block;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,.9);background:linear-gradient(145deg,#f5f2f8 4%,#d6cfdf 58%,#aaa1b9);box-shadow:inset 4px 5px 8px rgba(255,255,255,.58),inset -6px -7px 11px rgba(55,40,76,.14),0 8px 18px rgba(0,0,0,.34)}",
 			".dsa-moony-face img{width:100%;height:100%;display:block;object-fit:cover}",
-			".dsa-moony-ear{position:absolute;z-index:1;display:block;background:linear-gradient(145deg,var(--moony-ear-highlight),var(--moony-ear));border:3px solid var(--moony-rim);box-shadow:inset 3px 3px 6px rgba(255,255,255,.2),inset -4px -5px 7px rgba(30,18,60,.18),0 5px 9px rgba(0,0,0,.2);transform-origin:50% 90%}",
+			".dsa-moony-ear{position:absolute;z-index:3;display:block;background:linear-gradient(145deg,var(--moony-ear-highlight),var(--moony-ear));border:3px solid var(--moony-rim);box-shadow:inset 3px 3px 6px rgba(255,255,255,.2),inset -4px -5px 7px rgba(30,18,60,.18),0 5px 9px rgba(0,0,0,.2);transform-origin:50% 90%}",
 			".dsa-moony-ear::before{content:'';position:absolute;inset:7px;border:1px solid rgba(255,255,255,.18);border-radius:inherit}",
-			".dsa-moony-signal{position:absolute;right:6px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--moony-signal);box-shadow:0 0 8px var(--moony-signal)}",
-			".dsa-moony-pet[data-moony-ear='classic'] .dsa-moony-ear{top:-8px;width:22px;height:22px;border-radius:55% 45% 25% 30%}.dsa-moony-pet[data-moony-ear='classic'] .left{left:3px}.dsa-moony-pet[data-moony-ear='classic'] .right{right:3px}",
-			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-ear{top:-23px;width:27px;height:48px;border-radius:59% 41% 20% 30%;clip-path:polygon(0 0,100% 8%,72% 100%,48% 66%,25% 100%)}.dsa-moony-pet[data-moony-ear='pulse'] .left{left:1px;transform:rotate(-12deg)}.dsa-moony-pet[data-moony-ear='pulse'] .right{right:1px;transform:scaleX(-1) rotate(-12deg)}",
-			".dsa-moony-pet[data-moony-ear='echo'] .dsa-moony-ear{top:-12px;width:39px;height:34px;border-radius:65% 35% 58% 42%;clip-path:polygon(0 14%,100% 0,72% 100%,18% 82%)}.dsa-moony-pet[data-moony-ear='echo'] .left{left:-9px;transform:rotate(-18deg)}.dsa-moony-pet[data-moony-ear='echo'] .right{right:-9px;transform:scaleX(-1) rotate(-18deg)}",
-			".dsa-moony-pet[data-moony-ear='drift'] .dsa-moony-ear{top:-8px;width:24px;height:54px;border-radius:55% 45% 68% 32%}.dsa-moony-pet[data-moony-ear='drift'] .left{left:-4px;transform:rotate(26deg)}.dsa-moony-pet[data-moony-ear='drift'] .right{right:-4px;transform:rotate(-26deg)}",
-			".dsa-moony-pet[data-moony-ear='spark'] .left{left:5px;top:-27px;width:19px;height:50px;border-radius:60% 40% 18% 28%;transform:rotate(-23deg)}.dsa-moony-pet[data-moony-ear='spark'] .right{right:-7px;top:-8px;width:37px;height:29px;border-radius:70% 30% 55% 45%;transform:rotate(8deg)}",
-			".dsa-moony-pet[data-moony-ear='chorus'] .dsa-moony-ear{top:-18px;width:39px;height:40px;clip-path:polygon(50% 0,65% 39%,100% 20%,76% 60%,98% 84%,56% 75%,40% 100%,29% 68%,0 75%,25% 47%)}.dsa-moony-pet[data-moony-ear='chorus'] .left{left:-7px;transform:rotate(-9deg)}.dsa-moony-pet[data-moony-ear='chorus'] .right{right:-7px;transform:scaleX(-1) rotate(-9deg)}",
-			".dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-ear{top:-24px;width:37px;height:32px;border-radius:70% 30% 62% 38%;clip-path:polygon(0 10%,100% 0,78% 100%,18% 85%)}.dsa-moony-pet[data-moony-ear='hush'] .left{left:-9px;transform:rotate(-22deg)}.dsa-moony-pet[data-moony-ear='hush'] .right{right:-9px;transform:scaleX(-1) rotate(-22deg)}",
-			".dsa-moony-tail{position:absolute;z-index:2;pointer-events:none}.dsa-moony-tail[data-moony-tail='orbit']{right:-8px;bottom:-5px;width:38px;height:32px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(25deg)}",
-			".dsa-moony-tail[data-moony-tail='comet']{right:-12px;bottom:5px;width:38px;height:17px;border-radius:70% 30% 70% 30%;background:linear-gradient(90deg,var(--moony-ear-highlight),transparent);transform:rotate(24deg)}",
+			".dsa-moony-signal{position:absolute;z-index:4;right:6px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--moony-signal);box-shadow:0 0 8px var(--moony-signal)}",
+			".dsa-moony-pet[data-moony-ear='classic'] .dsa-moony-ear{top:-12px;width:22px;height:22px;border-radius:55% 45% 25% 30%}.dsa-moony-pet[data-moony-ear='classic'] .left{left:3px}.dsa-moony-pet[data-moony-ear='classic'] .right{right:3px}",
+			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-ear{top:-28px;width:27px;height:48px;border-radius:59% 41% 20% 30%;clip-path:polygon(0 0,100% 8%,72% 100%,48% 66%,25% 100%)}.dsa-moony-pet[data-moony-ear='pulse'] .left{left:1px;transform:rotate(-12deg)}.dsa-moony-pet[data-moony-ear='pulse'] .right{right:1px;transform:scaleX(-1) rotate(-12deg)}",
+			".dsa-moony-pet[data-moony-ear='echo'] .dsa-moony-ear{top:-18px;width:39px;height:34px;border-radius:65% 35% 58% 42%;clip-path:polygon(0 14%,100% 0,72% 100%,18% 82%)}.dsa-moony-pet[data-moony-ear='echo'] .left{left:-9px;transform:rotate(-18deg)}.dsa-moony-pet[data-moony-ear='echo'] .right{right:-9px;transform:scaleX(-1) rotate(-18deg)}",
+			".dsa-moony-pet[data-moony-ear='drift'] .dsa-moony-ear{top:-34px;width:24px;height:59px;border-radius:55% 45% 68% 32%}.dsa-moony-pet[data-moony-ear='drift'] .left{left:-18px;transform:rotate(26deg)}.dsa-moony-pet[data-moony-ear='drift'] .right{right:-18px;transform:rotate(-26deg)}",
+			".dsa-moony-pet[data-moony-ear='spark'] .left{left:5px;top:-31px;width:19px;height:50px;border-radius:60% 40% 18% 28%;transform:rotate(-23deg)}.dsa-moony-pet[data-moony-ear='spark'] .right{right:-7px;top:-12px;width:37px;height:29px;border-radius:70% 30% 55% 45%;transform:rotate(8deg)}",
+			".dsa-moony-pet[data-moony-ear='chorus'] .dsa-moony-ear{top:-23px;width:39px;height:40px;clip-path:polygon(50% 0,65% 39%,100% 20%,76% 60%,98% 84%,56% 75%,40% 100%,29% 68%,0 75%,25% 47%)}.dsa-moony-pet[data-moony-ear='chorus'] .left{left:-7px;transform:rotate(-9deg)}.dsa-moony-pet[data-moony-ear='chorus'] .right{right:-7px;transform:scaleX(-1) rotate(-9deg)}",
+			".dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-ear{top:-28px;width:37px;height:32px;border-radius:70% 30% 62% 38%;clip-path:polygon(0 10%,100% 0,78% 100%,18% 85%)}.dsa-moony-pet[data-moony-ear='hush'] .left{left:-9px;transform:rotate(-22deg)}.dsa-moony-pet[data-moony-ear='hush'] .right{right:-9px;transform:scaleX(-1) rotate(-22deg)}",
+			".dsa-moony-tail{position:absolute;z-index:1;pointer-events:none}.dsa-moony-tail[data-moony-tail='orbit']{right:-8px;bottom:-5px;width:38px;height:32px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(25deg)}",
+			".dsa-moony-tail[data-moony-tail='comet']{right:-17px;bottom:5px;width:42px;height:17px;border-radius:70% 30% 70% 30%;background:linear-gradient(90deg,var(--moony-ear-highlight),var(--moony-ear));transform:rotate(24deg)}",
 			".dsa-moony-tail[data-moony-tail='curl']{right:-7px;bottom:-6px;width:31px;height:31px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(12deg)}",
 			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='float'] .dsa-moony-ear{animation:dsa-moony-idle-float 3.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='beat'] .dsa-moony-ear{animation:dsa-moony-idle-beat 1.15s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-ear{animation:dsa-moony-idle-orbit 3.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-ear{animation:dsa-moony-idle-drift 4.2s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='scan'] .dsa-moony-ear{animation:dsa-moony-idle-scan 2.1s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-ear{animation:dsa-moony-idle-chorus 2.7s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='hush'] .dsa-moony-ear{animation:dsa-moony-idle-hush 5s ease-in-out infinite alternate}",
-			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-tail{animation:dsa-moony-idle-tail-orbit 5.2s linear infinite}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-tail{animation:dsa-moony-idle-tail-drift 3.6s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-tail{animation:dsa-moony-idle-tail-chorus 1.4s ease-in-out infinite alternate}",
+			".dsa-moony-pet.dsa-agent-idle[data-moony-motion='orbit'] .dsa-moony-tail{animation:dsa-moony-idle-tail-orbit 2.8s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='drift'] .dsa-moony-tail{animation:dsa-moony-idle-tail-drift 3.6s ease-in-out infinite alternate}.dsa-moony-pet.dsa-agent-idle[data-moony-motion='chorus'] .dsa-moony-tail{animation:dsa-moony-idle-tail-chorus 1.4s ease-in-out infinite alternate}",
 			".dsa-agent-running .dsa-moony-ear,.dsa-agent-waiting .dsa-moony-ear,.dsa-agent-failed .dsa-moony-ear,.dsa-agent-review .dsa-moony-ear{border-color:var(--moony-signal);filter:drop-shadow(0 0 5px var(--moony-signal))}",
 			".dsa-agent-running .dsa-moony-ear{animation:dsa-moony-running .52s ease-in-out infinite alternate}.dsa-agent-running .dsa-moony-ear.right{animation-direction:alternate-reverse}.dsa-agent-waiting .dsa-moony-ear{animation:dsa-moony-waiting 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-ear{animation:dsa-moony-failed .24s linear 3}.dsa-agent-review .dsa-moony-ear{animation:dsa-moony-review 1s ease-in-out infinite alternate}",
 			".dsa-agent-running .dsa-moony-tail{animation:dsa-moony-tail-sway .52s ease-in-out infinite alternate}.dsa-agent-waiting .dsa-moony-tail{animation:dsa-moony-tail-listen 1.4s ease-in-out infinite}.dsa-agent-failed .dsa-moony-tail{animation:dsa-moony-tail-failed .24s linear 3}.dsa-agent-review .dsa-moony-tail{animation:dsa-moony-tail-review 1s ease-in-out infinite alternate}",
+			".dsa-moony-pet.singing[data-moony-motion] .dsa-moony-ear{animation:dsa-moony-music-ear var(--moony-beat,.8s) ease-in-out infinite alternate}.dsa-moony-pet.singing[data-moony-motion] .dsa-moony-ear.right{animation-direction:alternate-reverse}.dsa-moony-pet.singing[data-moony-motion] .dsa-moony-tail{animation:dsa-moony-music-tail var(--moony-beat,.8s) ease-in-out infinite alternate}",
 			"@keyframes dsa-moony-listen-float{from{translate:0 0}to{translate:0 -3px}}@keyframes dsa-moony-listen-beat{from{translate:0 0;scale:1}to{translate:0 -3px;scale:1.025}}@keyframes dsa-moony-listen-orbit{0%,100%{rotate:-1.5deg}50%{rotate:1.5deg}}@keyframes dsa-moony-listen-drift{from{translate:-1px 1px}to{translate:1px -3px}}@keyframes dsa-moony-listen-scan{from{rotate:-1deg}to{rotate:2deg}}@keyframes dsa-moony-listen-chorus{from{translate:0 0;scale:1}to{translate:0 -4px;scale:1.02}}@keyframes dsa-moony-listen-hush{from{translate:0 0}to{translate:0 -1px}}",
-			"@keyframes dsa-moony-idle-float{from{rotate:-2deg}to{rotate:2deg}}@keyframes dsa-moony-idle-beat{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-orbit{from{rotate:-2deg}to{rotate:3deg}}@keyframes dsa-moony-idle-drift{from{translate:0 0}to{translate:0 2px}}@keyframes dsa-moony-idle-scan{from{rotate:-1deg}to{rotate:3deg}}@keyframes dsa-moony-idle-chorus{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-hush{from{scale:1}to{scale:.98}}@keyframes dsa-moony-idle-tail-orbit{to{rotate:1turn}}@keyframes dsa-moony-idle-tail-drift{from{translate:0 0}to{translate:1px -2px}}@keyframes dsa-moony-idle-tail-chorus{from{rotate:-2deg}to{rotate:5deg}}",
+			"@keyframes dsa-moony-music-ear{from{rotate:-6deg;translate:0 0}to{rotate:6deg;translate:0 -2px}}@keyframes dsa-moony-music-tail{from{rotate:-5deg;translate:0 1px}to{rotate:7deg;translate:0 -2px}}",
+			"@keyframes dsa-moony-idle-float{from{rotate:-2deg}to{rotate:2deg}}@keyframes dsa-moony-idle-beat{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-orbit{from{rotate:-2deg}to{rotate:3deg}}@keyframes dsa-moony-idle-drift{from{translate:0 0}to{translate:0 2px}}@keyframes dsa-moony-idle-scan{from{rotate:-1deg}to{rotate:3deg}}@keyframes dsa-moony-idle-chorus{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-hush{from{scale:1}to{scale:.98}}@keyframes dsa-moony-idle-tail-orbit{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-idle-tail-drift{from{translate:0 0}to{translate:1px -2px}}@keyframes dsa-moony-idle-tail-chorus{from{rotate:-2deg}to{rotate:5deg}}",
 			"@keyframes dsa-moony-running{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-waiting{0%,100%{translate:-1px 0}50%{translate:2px 1px}}@keyframes dsa-moony-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-review{from{translate:0 0}to{translate:0 -3px}}",
 			"@keyframes dsa-moony-tail-sway{from{rotate:-5deg}to{rotate:7deg}}@keyframes dsa-moony-tail-listen{0%,100%{translate:0 0}50%{translate:0 -2px}}@keyframes dsa-moony-tail-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-tail-review{from{translate:0 0}to{translate:0 -2px}}",
 			"@media (prefers-reduced-motion:reduce){.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-tail{animation:none!important}}"
@@ -210,10 +238,18 @@ window.__ModuleLoader__.load({
 			".dsa-btn-primary:hover{filter:brightness(1.05)}",
 			".dsa-mode{font-size:10px;min-width:32px;padding:0 3px;color:rgba(255,255,255,0.85)}",
 			".dsa-mode-icon{width:24px;height:24px;color:rgba(255,255,255,0.8)}",
-			".dsa-shape{font-size:11px;font-weight:700;min-width:44px;padding:0 8px;border-radius:9px;color:#1c1200;background:linear-gradient(135deg,#fbbf24,#f97316);box-shadow:0 0 10px rgba(251,146,60,0.55),0 2px 8px rgba(0,0,0,0.3);transition:filter .15s,box-shadow .15s}",
-			".dsa-shape:hover{filter:brightness(1.12);box-shadow:0 0 16px rgba(251,146,60,0.8),0 2px 10px rgba(0,0,0,0.35)}",
+			".dsa-shape-wrap{position:relative;display:flex;align-items:stretch;border-radius:9px;background:linear-gradient(135deg,#fbbf24,#f97316);box-shadow:0 0 10px rgba(251,146,60,0.55),0 2px 8px rgba(0,0,0,0.3);transition:filter .15s,box-shadow .15s}.dsa-shape-wrap:hover{filter:brightness(1.08);box-shadow:0 0 16px rgba(251,146,60,0.8),0 2px 10px rgba(0,0,0,0.35)}",
+			".dsa-shape{font-size:11px;font-weight:700;width:auto;min-width:42px;padding:0 7px;border-radius:9px 0 0 9px;color:#1c1200}.dsa-shape-arrow{width:22px;border-left:1px solid rgba(89,48,0,.25);border-radius:0 9px 9px 0;color:#1c1200;font-size:10px}.dsa-shape:hover,.dsa-shape-arrow:hover{background:rgba(255,255,255,.2)}",
+			".dsa-moony-menu{position:absolute;right:0;top:48px;z-index:30;width:224px;padding:6px;border:1px solid rgba(255,255,255,.2);border-radius:12px;background:rgba(21,22,31,.96);box-shadow:0 14px 34px rgba(0,0,0,.48);backdrop-filter:blur(18px);display:grid;gap:3px}",
+			".dsa-moony-option{width:100%;height:42px;border:1px solid transparent;border-radius:9px;background:transparent;color:#fff;display:flex;align-items:center;gap:8px;padding:5px 7px;text-align:left;cursor:pointer}.dsa-moony-option:hover{background:rgba(255,255,255,.09)}.dsa-moony-option.on{border-color:rgba(251,191,36,.5);background:rgba(251,146,60,.13)}",
+			".dsa-moony-option-copy{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}.dsa-moony-option-copy strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dsa-moony-option-copy small{margin-top:2px;font-size:9px;color:rgba(255,255,255,.58)}.dsa-moony-option-check{width:14px;color:#fbbf24;font-size:12px;text-align:center}",
 			".dsa-body{padding:2px 12px 12px}",
 			".dsa-controls{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}",
+			".dsa-progress{display:flex;align-items:center;gap:7px;margin-top:6px}",
+			".dsa-progress .tp{flex:none;min-width:30px;font-size:9.5px;color:rgba(255,255,255,0.55);text-align:center;font-variant-numeric:tabular-nums}",
+			".dsa-range{flex:1;min-width:0;height:3px;-webkit-appearance:none;appearance:none;background:rgba(255,255,255,0.18);border-radius:3px;outline:none;cursor:pointer}",
+			".dsa-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:11px;height:11px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 4px rgba(0,0,0,0.45)}",
+			".dsa-range:disabled{opacity:0.4;cursor:not-allowed}",
 			".dsa-search{display:flex;gap:6px;margin-top:8px}",
 			".dsa-input{flex:1;min-width:0;background:rgba(255,255,255,0.13);border:1px solid rgba(255,255,255,0.22);border-radius:9px;color:#fff;font-size:12px;padding:5px 9px;outline:none;backdrop-filter:blur(6px)}",
 			".dsa-input:focus{border-color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.17)}",
@@ -221,7 +257,7 @@ window.__ModuleLoader__.load({
 			".dsa-go{flex:none;border:none;border-radius:9px;background:transparent;color:#fff;font-size:12px;padding:0 12px;cursor:pointer;font-weight:600}",
 			".dsa-go:hover{background:rgba(255,255,255,0.16)}",
 			".dsa-go:disabled{opacity:0.5;cursor:not-allowed}",
-			".dsa-results{margin-top:6px;max-height:150px;overflow-y:auto}",
+			".dsa-results{margin-top:6px;max-height:260px;overflow-y:auto}",
 			".dsa-item{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:8px;cursor:pointer}",
 			".dsa-item:hover{background:rgba(255,255,255,0.10)}",
 			".dsa-item .t{flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
@@ -259,10 +295,16 @@ window.__ModuleLoader__.load({
 			".dsa-type{flex:1;border:1px solid rgba(255,255,255,0.18);background:transparent;color:rgba(255,255,255,0.75);border-radius:8px;font-size:11px;padding:3px 0;cursor:pointer}",
 			".dsa-type.active{background:rgba(255,255,255,0.16);border-color:rgba(255,255,255,0.4);color:#fff;font-weight:600}",
 			".dsa-type:hover{background:rgba(255,255,255,0.08)}",
+			".dsa-close-results{flex:none;width:22px;border:1px solid rgba(255,255,255,0.14);background:transparent;color:rgba(255,255,255,0.5);border-radius:8px;font-size:10px;padding:3px 0;cursor:pointer}",
+			".dsa-close-results:hover{background:rgba(255,255,255,0.1);color:#fff}",
 			".dsa-queue{margin-top:8px;border:1px solid rgba(255,255,255,0.12);border-radius:10px;background:rgba(255,255,255,0.05)}",
 			".dsa-queue-title{display:flex;align-items:center;gap:6px;padding:6px 9px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.85);cursor:pointer}",
 			".dsa-queue-title .cnt{color:rgba(255,255,255,0.5);font-weight:400}",
 			".dsa-queue-title .fold{margin-left:auto;color:rgba(255,255,255,0.5)}",
+			".dsa-qclear-row{padding:3px 6px 4px;border-top:1px dashed rgba(255,255,255,0.08);margin-top:2px;text-align:center}",
+			".dsa-qclear{border:none;background:transparent;color:rgba(255,255,255,0.35);font-size:9.5px;padding:2px 8px;cursor:pointer;border-radius:6px}",
+			".dsa-qclear:hover{color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.06)}",
+			".dsa-qclear:disabled{opacity:0.3;cursor:not-allowed}",
 			".dsa-queue-list{max-height:130px;overflow-y:auto;padding:0 6px 6px}",
 			".dsa-qitem{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:7px;font-size:11px;color:rgba(255,255,255,0.8);cursor:pointer}",
 			".dsa-qitem:hover{background:rgba(255,255,255,0.08)}",
@@ -274,10 +316,6 @@ window.__ModuleLoader__.load({
 			".dsa-addall{margin-top:6px;width:100%;border:1px dashed rgba(255,255,255,0.25);background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.85);border-radius:8px;font-size:11px;padding:4px 0;cursor:pointer}",
 			".dsa-addall:hover{background:rgba(255,255,255,0.12)}",
 			".dsa-addall:disabled{opacity:0.5;cursor:not-allowed}",
-			".dsa-rowbtn{flex:none;border:none;border-radius:7px;background:rgba(255,255,255,0.12);color:#fff;font-size:10px;padding:2px 7px;cursor:pointer}",
-			".dsa-rowbtn:hover{background:rgba(255,255,255,0.22)}",
-			".dsa-rowbtn:disabled{opacity:0.5;cursor:not-allowed}",
-			".dsa-rowbtn.play{background:linear-gradient(135deg,#3b82f6,#6366f1)}",
 			/* ---- 宠物（收起态）：宠物固定，气泡锚定在左/右侧（自动换边） ---- */
 			".dsa-pet-wrap{position:fixed;z-index:2147483000;width:64px;height:64px;user-select:none}",
 			".dsa-pet-bubble-pos{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center}",
@@ -346,23 +384,18 @@ window.__ModuleLoader__.load({
 
 		function readyDot(state) {
 			if (!state) return "wait";
-			if (!state.installed) return "bad";
-			if (!state.running) return "wait";
-			if (!state.remoteUp) return "wait";
+			if (!state.musicApiUp) return "bad";
 			return "ok";
 		}
 
 		function readyText(state) {
 			if (!state) return "连接中…";
-			if (!state.installed) return "未安装 AlgerMusicPlayer";
-			if (!state.running) return "App 未运行";
-			if (!state.remoteUp) return "远程控制未就绪";
-			if (!state.cdpUp) return "已就绪（点歌通道待开启）";
+			if (!state.musicApiUp) return "音乐服务未就绪";
 			return "已就绪";
 		}
 
 		function needSetup(state) {
-			return state && state.installed && (!state.running || !state.remoteUp || !state.cdpUp);
+			return state && !state.musicApiUp;
 		}
 
 		/* ---------- 宠物显示状态（浮窗与侧边栏开关共享） ---------- */
@@ -414,6 +447,7 @@ window.__ModuleLoader__.load({
 			var selectMoony = function (id) { setPetId(writeStoredMoonyId(getLocalStorage(), id)); };
 			// 默认宠物形态（收起）：每次打开先看到宠物，点击才切换播放器
 			var [collapsed, setCollapsed] = React.useState(true);
+			var [shapeMenuOpen, setShapeMenuOpen] = React.useState(false);
 			var [pos, setPos] = React.useState(null);
 			var posRef = React.useRef(null);
 			var dragRef = React.useRef(null);
@@ -454,6 +488,102 @@ window.__ModuleLoader__.load({
 				var timer = setInterval(refresh, POLL_MS);
 				return function () { clearInterval(timer); };
 			}, [refresh]);
+
+			// ---------- 内置 <audio> 播放引擎 ----------
+			// 服务端状态机是唯一事实来源：轮询发现 currentUrl 变化就切换播放；
+			// 音频事件（进度/结束/播放状态）定时上报回服务端。
+			var audioRef = React.useRef(null);
+			var lastUrlRef = React.useRef(null); // 已加载的直链，避免重复播放
+			var [prog, setProg] = React.useState({ pos: 0, dur: 0 }); // 进度条显示（audio 实时事件驱动）
+			var seekingRef = React.useRef(false); // 拖动中不刷新滑块位置
+			// 创建 audio 元素（惰性，仅一次）
+			React.useEffect(function () {
+				if (audioRef.current) return;
+				var audio = document.createElement("audio");
+				audio.style.display = "none";
+				document.body.appendChild(audio);
+				var syncProg = function () {
+					if (seekingRef.current) return;
+					setProg({ pos: audio.currentTime || 0, dur: audio.duration || 0 });
+				};
+				audio.addEventListener("timeupdate", syncProg);
+				audio.addEventListener("durationchange", syncProg);
+				audio.addEventListener("loadedmetadata", syncProg);
+				audio.addEventListener("ended", function () {
+					// 自然结束：告诉服务端播下一首（按播放模式）
+					reportPlayback({ playing: false, position: 0, duration: audio.duration || 0, ready: true });
+					command("next").then(function () { setTimeout(refresh, 300); }).catch(function () {});
+				});
+				audio.addEventListener("error", function () {
+					reportPlayback({ playing: false, position: 0, duration: audio.duration || 0, ready: true });
+				});
+				audioRef.current = audio;
+				return function () {
+					try { audio.pause(); audio.src = ""; } catch { /* ignore */ }
+					if (audio.parentNode) audio.parentNode.removeChild(audio);
+					audioRef.current = null;
+				};
+			}, []);
+
+			var seekEndTimerRef = React.useRef(null);
+			// 进度条：拖动 seek（直接用 audio.currentTime，拖动结束由 timeupdate 接管）
+			var onSeek = function (e) {
+				var audio = audioRef.current;
+				if (!audio) return;
+				var v = Number(e.target.value);
+				seekingRef.current = true;
+				try { audio.currentTime = v; } catch { /* ignore */ }
+				setProg({ pos: v, dur: audio.duration || prog.dur });
+				clearTimeout(seekEndTimerRef.current);
+				seekEndTimerRef.current = setTimeout(function () { seekingRef.current = false; }, 600);
+			};
+
+			// 状态轮询 → 直链变化时播放 / 播放状态同步
+			React.useEffect(function () {
+				var audio = audioRef.current;
+				if (!audio) return;
+				var st = state || {};
+				var url = st.currentUrl || null;
+				// 无当前曲（清空播放列表等）：停止并释放
+				if (!url) {
+					if (lastUrlRef.current) lastUrlRef.current = null;
+					if (!audio.paused) audio.pause();
+					if (audio.src) { try { audio.removeAttribute("src"); audio.load(); } catch { /* ignore */ } }
+					return;
+				}
+				if (url !== lastUrlRef.current) {
+					lastUrlRef.current = url;
+					audio.src = url;
+					audio.volume = typeof st.volume === "number" ? st.volume : 0.8;
+					var p = audio.play();
+					if (p && typeof p.catch === "function") p.catch(function () { /* 浏览器阻止自动播放时静默 */ });
+				} else if (typeof st.volume === "number" && Math.abs(audio.volume - st.volume) > 0.01) {
+					audio.volume = st.volume;
+				}
+				// 播放/暂停同步（服务端控制 → 浏览器执行）
+				var stPlaying = Boolean(st.playing && st.playing.isPlaying);
+				if (stPlaying && audio.paused && audio.src) {
+					var pp = audio.play();
+					if (pp && typeof pp.catch === "function") pp.catch(function () {});
+				} else if (!stPlaying && !audio.paused && audio.src) {
+					audio.pause();
+				}
+			}, [state]);
+
+			// 进度上报（2s 一次，供服务端状态/模型读取）
+			React.useEffect(function () {
+				var timer = setInterval(function () {
+					var audio = audioRef.current;
+					if (!audio) return;
+					reportPlayback({
+						position: audio.currentTime || 0,
+						duration: audio.duration || 0,
+						playing: !audio.paused && !audio.ended,
+						ready: true
+					});
+				}, 2000);
+				return function () { clearInterval(timer); };
+			}, []);
 
 			// 恢复位置 / 默认右下角
 			React.useEffect(function () {
@@ -524,9 +654,14 @@ window.__ModuleLoader__.load({
 			var toggleCollapsed = function () {
 				setCollapsed(!collapsed);
 			};
+			var transformAsMoony = function (id) {
+				selectMoony(id);
+				setShapeMenuOpen(false);
+				setCollapsed(true);
+			};
 
 			var runCommand = function (action) {
-				if (!state || !state.remoteUp) { flash("err", "远程控制未就绪，请先点“连接”"); return; }
+				if (!state || !state.musicApiUp) { flash("err", "音乐服务未就绪，请先点“连接”"); return; }
 				command(action).then(function (r) {
 					if (r && r.ok === false) flash("err", r.error || "命令失败");
 					setTimeout(refresh, 400);
@@ -535,7 +670,7 @@ window.__ModuleLoader__.load({
 
 			// 收藏：乐观更新——点击立即变红/变白（不等轮询），不弹文字；命令失败才提示
 			var onToggleFavorite = function () {
-				if (!state || !state.remoteUp || !playing) { flash("err", "没有正在播放的歌曲"); return; }
+				if (!state || !state.musicApiUp || !playing) { flash("err", "没有正在播放的歌曲"); return; }
 				var target = !(favOptimistic !== null ? favOptimistic : Boolean(state.favorite));
 				setFavOptimistic(target);
 				setTimeout(function () { setFavOptimistic(null); }, 2500); // 2.5s 后由轮询的真实状态接管
@@ -545,24 +680,17 @@ window.__ModuleLoader__.load({
 				}).catch(function () { setFavOptimistic(null); flash("err", "收藏失败"); });
 			};
 
-			// 右上角连接按钮：未安装→一键安装；未就绪→一键就绪；已连接→重查
-			var connLabel = !state
-				? "…"
-				: !state.installed
-					? "安装"
-					: state.remoteUp && state.cdpUp
-						? "已连接"
-						: "连接";
+			// 连接按钮：服务正常时完全隐藏（自动启动，无需操作）；异常时才显示恢复入口
+			var needConn = Boolean(state && !state.musicApiUp);
+			var connLabel = needConn ? "启动音乐服务" : null;
 			var onConnClick = function () {
-				if (!state) return;
-				if (!state.installed) { onInstall(); return; }
-				if (!(state.remoteUp && state.cdpUp)) { onSetup(); return; }
-				refresh();
+				if (!state || state.musicApiUp) return;
+				onSetup();
 			};
 
 			// 推荐播放：不知道听什么时一键推荐
 			var onRecommend = function () {
-				if (!state || !state.remoteUp) { flash("err", "远程控制未就绪，请先点“连接”"); return; }
+				if (!state || !state.musicApiUp) { flash("err", "音乐服务未就绪，请先点“连接”"); return; }
 				setBusy(true);
 				post("/dsh-alger/recommend", {}).then(function (r) {
 					setBusy(false);
@@ -593,62 +721,59 @@ window.__ModuleLoader__.load({
 				if (query.trim()) setTimeout(function () { onSearch(type); }, 0);
 			};
 
+			// 双击歌曲：追加到播放列表末尾并立即播放（不关闭搜索列表，可连续双击多首）
 			var onPlaySong = function (item) {
 				setBusy(true);
-				playSong({ songId: item.id }).then(function (r) {
-					setBusy(false);
-					if (r && r.ok) {
-						flash("ok", "已点播：" + (r.playedName || item.name) + (r.confirmed ? "" : "（待确认）"));
-						setResults(null);
-						setSearched(false);
-						setQuery("");
-					} else {
-						flash("err", (r && r.guidance) || (r && r.error) || "点歌失败");
-					}
-					setTimeout(refresh, 600);
-				}).catch(function () { setBusy(false); flash("err", "点歌失败"); });
-			};
-
-			var onAddSong = function (item) {
-				setBusy(true);
 				queueApi({ action: "add", songId: item.id }).then(function (r) {
-					setBusy(false);
-					if (r && r.ok) flash("ok", "已加入播放列表：" + (item.name || ""));
-					else flash("err", (r && r.guidance) || (r && r.error) || "加入失败");
-					setTimeout(refresh, 500);
-				}).catch(function () { setBusy(false); flash("err", "加入失败"); });
+					if (!r || !r.ok) { setBusy(false); flash("err", (r && r.guidance) || (r && r.error) || "添加失败"); return; }
+					// 追加后它位于队尾：queueLength-1
+					var idx = (r.queueLength || 1) - 1;
+					return queueApi({ action: "jump", index: idx }).then(function (jr) {
+						setBusy(false);
+						if (jr && jr.ok) flash("ok", "已添加并播放：" + (jr.playedName || item.name));
+						else flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
+						setTimeout(refresh, 600);
+					});
+				}).catch(function () { setBusy(false); flash("err", "添加失败"); });
 			};
 
 			var onAddAll = function () {
 				var q = query.trim();
 				if (!q) return;
 				setBusy(true);
-				queueApi({ action: "add-all", keyword: q, limit: 20 }).then(function (r) {
+				queueApi({ action: "add-all", keyword: q, limit: 30 }).then(function (r) {
+					if (!r || !r.ok) { setBusy(false); flash("err", (r && r.guidance) || (r && r.error) || "加入失败"); return; }
+					flash("ok", "已一键加入播放列表（" + (r.added || 0) + " 首）");
+					// 当前没在播放时，自动从这批歌的第一首开始按顺序播
+					if (!isPlaying) {
+						var added = r.added || 0;
+						var idx = (r.queueLength || added) - added;
+						return queueApi({ action: "jump", index: idx }).then(function (jr) {
+							setBusy(false);
+							if (jr && !jr.ok) flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
+							setTimeout(refresh, 600);
+						});
+					}
 					setBusy(false);
-					if (r && r.ok) flash("ok", "已把搜索到的 " + (r.added || 0) + " 首全部加入播放列表");
-					else flash("err", (r && r.guidance) || (r && r.error) || "加入失败");
 					setTimeout(refresh, 500);
 				}).catch(function () { setBusy(false); flash("err", "加入失败"); });
 			};
 
+			// 双击歌单：整单追加到播放列表末尾并立即播放第一首（不关闭搜索列表）
 			var onPlayPlaylist = function (item) {
 				setBusy(true);
-				queueApi({ action: "playlist", playlistId: item.id }).then(function (r) {
-					setBusy(false);
-					if (r && r.ok) flash("ok", "正在播放歌单：" + (item.name || "") + (r.playedName ? "（从 " + r.playedName + " 开始）" : ""));
-					else flash("err", (r && r.guidance) || (r && r.error) || "播放歌单失败");
-					setTimeout(refresh, 600);
-				}).catch(function () { setBusy(false); flash("err", "播放歌单失败"); });
-			};
-
-			var onAddPlaylist = function (item) {
-				setBusy(true);
 				queueApi({ action: "playlist-add", playlistId: item.id }).then(function (r) {
-					setBusy(false);
-					if (r && r.ok) flash("ok", "歌单已整单加入播放列表：" + (item.name || "") + "（" + (r.added || 0) + " 首）");
-					else flash("err", (r && r.guidance) || (r && r.error) || "加入失败");
-					setTimeout(refresh, 500);
-				}).catch(function () { setBusy(false); flash("err", "加入失败"); });
+					if (!r || !r.ok) { setBusy(false); flash("err", (r && r.guidance) || (r && r.error) || "添加失败"); return; }
+					// 加入前长度 = queueLength - added，歌单第一首即该下标
+					var added = r.added || 0;
+					var idx = (r.queueLength || added) - added;
+					return queueApi({ action: "jump", index: idx }).then(function (jr) {
+						setBusy(false);
+						if (jr && jr.ok) flash("ok", "歌单已添加并播放：" + (item.name || "") + "（" + added + " 首）");
+						else flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
+						setTimeout(refresh, 600);
+					});
+				}).catch(function () { setBusy(false); flash("err", "添加失败"); });
 			};
 
 			// 播放列表：单击选中、双击跳转播放（保留队列）
@@ -667,27 +792,24 @@ window.__ModuleLoader__.load({
 
 			var onSetup = function () {
 				setBusy(true);
-				flash("", "正在就绪（重启 App 并开启远程控制，约 10~30 秒）…");
-				setupApp("relaunch").then(function (r) {
+				flash("", "正在启动音乐服务…");
+				setupApp("start").then(function (r) {
 					setBusy(false);
-					if (r && r.ok) flash("ok", "已就绪！可以开始点歌了。");
-					else flash("err", (r && r.steps && r.steps[r.steps.length - 1]) || "就绪失败，请查看 App 状态");
+					if (r && r.ok) flash("ok", "音乐服务已就绪，可以开始点歌了。");
+					else flash("err", (r && r.steps && r.steps[r.steps.length - 1]) || "音乐服务启动失败");
 					refresh();
-				}).catch(function () { setBusy(false); flash("err", "就绪失败"); });
+				}).catch(function () { setBusy(false); flash("err", "音乐服务启动失败"); });
 			};
 
-			var onInstall = function () {
+			// 清空播放列表
+			var onQueueClear = function () {
 				setBusy(true);
-				flash("", "正在自动下载并安装 AlgerMusicPlayer（约 130MB，需要几分钟）…");
-				installApp().then(function (r) {
+				queueApi({ action: "clear" }).then(function (r) {
 					setBusy(false);
-					if (r && r.ok) {
-						flash("ok", r.alreadyInstalled ? "已安装" + (r.version ? " " + r.version : "") + "，无需安装" : "安装完成" + (r.version ? "（" + r.version + "）" : "") + "！点“一键就绪”开始使用");
-					} else {
-						flash("err", (r && r.guidance) || (r && r.error) || "安装失败");
-					}
-					refresh();
-				}).catch(function () { setBusy(false); flash("err", "安装失败"); });
+					if (r && r.ok) flash("ok", "播放列表已清空");
+					else flash("err", (r && r.guidance) || (r && r.error) || "清空失败");
+					setTimeout(refresh, 400);
+				}).catch(function () { setBusy(false); flash("err", "清空失败"); });
 			};
 
 			var onSearchKey = function (event) {
@@ -700,8 +822,8 @@ window.__ModuleLoader__.load({
 			var isPlaying = Boolean(remote && remote.isPlaying);
 			var dot = readyDot(state);
 			var title = playing ? playing.name : "未在播放";
-			var artist = playing ? (playing.artists || "") : (state && state.running ? "AlgerMusicPlayer" : "播放器未连接");
-			var canControl = Boolean(state && state.remoteUp);
+			var artist = playing ? (playing.artists || "") : (state && state.musicApiUp ? "月宝 Moony" : "播放器未连接");
+			var canControl = Boolean(state && state.musicApiUp);
 
 			// 切歌时拉歌词与作者头像
 			var songId = playing ? playing.id : null;
@@ -829,29 +951,34 @@ window.__ModuleLoader__.load({
 							h("div", { className: "dsa-artist" }, artist)
 						]),
 						h("div", { className: "dsa-actions" }, [
-							// 连接状态 + 连接/安装/就绪按钮（右上角）
-							h("button", {
-								className: "dsa-conn" + (state && state.remoteUp && state.cdpUp ? " on" : ""),
-								disabled: busy,
-								onClick: onConnClick
-							}, [
-								h("span", { className: "dot " + dot }),
-								h("span", null, connLabel)
-							]),
-							// 切换形态：收起为宠物 / 展开播放器（月宝圆脸 ↔ 播放器卡片）
-							h("button", {
-								className: "dsa-btn dsa-shape",
-								title: "收起为宠物 / 展开播放器",
-								onClick: function (e) { e.stopPropagation(); toggleCollapsed(); }
-							}, "变身")
+							// 音乐服务异常时的恢复入口（正常时隐藏）
+							needConn
+								? h("button", {
+										className: "dsa-conn",
+										disabled: busy,
+										onClick: onConnClick
+									}, [
+										h("span", { className: "dot " + dot }),
+										h("span", null, connLabel)
+									])
+								: null,
+							// 分裂式变身：主按钮使用当前 Moony；箭头展开静态头像菜单。
+							h("div", { className: "dsa-shape-wrap", onPointerDown: function (e) { e.stopPropagation(); } }, [
+								h("button", {
+									className: "dsa-btn dsa-shape", "data-moony-transform": true,
+									title: "变身为 " + getMoony(petId).name,
+									onClick: function (e) { e.stopPropagation(); setShapeMenuOpen(false); setCollapsed(true); }
+								}, "变身"),
+								h("button", {
+									className: "dsa-btn dsa-shape-arrow", "data-moony-menu-toggle": true,
+									title: "选择其他 Moony", "aria-haspopup": "menu", "aria-expanded": shapeMenuOpen,
+									onClick: function (e) { e.stopPropagation(); setShapeMenuOpen(!shapeMenuOpen); }
+								}, shapeMenuOpen ? "▴" : "▾")
+							])
 						])
 					]),
 					// 主体
 					h("div", { className: "dsa-body" }, [
-						h("div", { className: "dsa-moony-picker-row" }, [
-							h("span", { className: "dsa-moony-picker-label" }, "Moony"),
-							h(MoonyPicker, { selectedId: petId, onSelect: selectMoony })
-						]),
 						// 传输控制（含收藏）
 						h("div", { className: "dsa-controls" }, [
 							h("button", { className: "dsa-btn dsa-mode", title: "推荐播放（不知道听什么时用）", disabled: !canControl || busy, onClick: onRecommend }, "推荐"),
@@ -876,6 +1003,23 @@ window.__ModuleLoader__.load({
 								onClick: function () { runCommand("playmode"); }
 							}, h(PlayModeIcon, { mode: state && typeof state.playMode === "number" ? state.playMode : 0 }))
 						]),
+						// 进度条
+						playing
+							? h("div", { className: "dsa-progress" }, [
+									h("span", { className: "tp" }, fmtClock(prog.pos)),
+									h("input", {
+										type: "range",
+										className: "dsa-range",
+										min: 0,
+										max: prog.dur || 0,
+										step: 0.1,
+										value: Math.min(prog.pos, prog.dur || 0),
+										disabled: !canControl,
+										onChange: onSeek
+									}),
+									h("span", { className: "tp" }, fmtClock(prog.dur))
+								])
+							: null,
 						// 播放列表
 						state && state.queue && Array.isArray(state.queue.items)
 							? h("div", { className: "dsa-queue" }, [
@@ -885,21 +1029,30 @@ window.__ModuleLoader__.load({
 										h("span", { className: "fold" }, queueOpen ? "▾" : "▸")
 									]),
 									queueOpen
-										? h("div", { className: "dsa-queue-list" }, state.queue.items.map(function (item, i) {
-												return h("div", {
-													key: item.id + "-" + i,
-													className: "dsa-qitem" +
-														(i === state.queue.index ? " cur" : "") +
-														(i === selectedIdx && i !== state.queue.index ? " sel" : ""),
-													title: "单击选中，双击播放",
-													onClick: function () { onQueueSelect(i); },
-													onDoubleClick: function () { onQueueJump(i); }
-												}, [
-													h("span", { className: "n" }, (i + 1) + "."),
-													h("span", { className: "t" }, item.name),
-													h("span", { className: "s" }, item.artists || "")
-												]);
-											}))
+										? h("div", { className: "dsa-queue-list" }, [
+												state.queue.items.map(function (item, i) {
+													return h("div", {
+														key: item.id + "-" + i,
+														className: "dsa-qitem" +
+															(i === state.queue.index ? " cur" : "") +
+															(i === selectedIdx && i !== state.queue.index ? " sel" : ""),
+														title: "单击选中，双击播放",
+														onClick: function () { onQueueSelect(i); },
+														onDoubleClick: function () { onQueueJump(i); }
+													}, [
+														h("span", { className: "n" }, (i + 1) + "."),
+														h("span", { className: "t" }, item.name),
+														h("span", { className: "s" }, item.artists || "")
+													]);
+												}),
+												h("div", { className: "dsa-qclear-row" }, [
+													h("button", {
+														className: "dsa-qclear",
+														disabled: busy || state.queue.items.length === 0,
+														onClick: onQueueClear
+													}, "清空播放列表")
+												])
+											])
 										: null
 								])
 							: null,
@@ -925,41 +1078,48 @@ window.__ModuleLoader__.load({
 									])
 							)
 						]),
-						// 搜索结果（搜索后出现歌曲/歌单 tab，可左右切换重新搜索；歌曲：双击播放 + 加入；歌单：双击播放歌单 + 整单加入）
+						// 搜索结果（搜索后出现歌曲/歌单 tab + 关闭按钮；歌曲：双击播放 + 加入；歌单：双击播放歌单 + 整单加入）
 						searched
 							? h("div", { className: "dsa-types" }, [
 									h("button", { className: "dsa-type" + (searchType === 1 ? " active" : ""), onClick: function () { switchType(1); } }, "歌曲"),
-									h("button", { className: "dsa-type" + (searchType === 1000 ? " active" : ""), onClick: function () { switchType(1000); } }, "歌单")
+									h("button", { className: "dsa-type" + (searchType === 1000 ? " active" : ""), onClick: function () { switchType(1000); } }, "歌单"),
+									h("button", {
+										className: "dsa-close-results",
+										title: "收起搜索结果",
+										onClick: function () {
+											setResults(null);
+											setSearched(false);
+											setQuery("");
+										}
+									}, "✕")
 								])
 							: null,
 						results && results.length > 0
 							? h("div", { className: "dsa-results" }, [
 									searchType === 1
-										? h("button", { className: "dsa-addall", disabled: busy, onClick: onAddAll }, "＋ 把搜索到的 " + results.length + " 首全部加入播放列表")
+										? h("button", { className: "dsa-addall", disabled: busy, onClick: onAddAll }, "＋ 一键加入播放列表")
 										: null,
 									results.map(function (item) {
 										if (searchType === 1) {
 											return h("div", {
 												key: item.id,
 												className: "dsa-item",
-												title: "双击播放：" + item.name,
+												title: "双击：添加并播放 " + item.name,
 												onDoubleClick: function () { onPlaySong(item); }
 											}, [
 												h("span", { className: "t" }, item.name),
 												h("span", { className: "s" }, item.artists || ""),
-												h("span", { className: "p" }, item.durationMs ? Math.floor(item.durationMs / 60000) + ":" + String(Math.floor(item.durationMs / 1000) % 60).padStart(2, "0") : ""),
-												h("button", { className: "dsa-rowbtn", title: "加入播放列表（双击整行可播放）", disabled: busy, onClick: function (e) { e.stopPropagation(); onAddSong(item); } }, "＋加入")
+												h("span", { className: "p" }, item.durationMs ? Math.floor(item.durationMs / 60000) + ":" + String(Math.floor(item.durationMs / 1000) % 60).padStart(2, "0") : "")
 											]);
 										}
 										return h("div", {
 											key: item.id,
 											className: "dsa-item",
-											title: "双击播放歌单：" + item.name,
+											title: "双击：添加歌单并播放 " + item.name,
 											onDoubleClick: function () { onPlayPlaylist(item); }
 										}, [
 											h("span", { className: "t" }, item.name),
-											h("span", { className: "s" }, item.desc || ""),
-											h("button", { className: "dsa-rowbtn", title: "歌单整单加入播放列表（双击整行可播放）", disabled: busy, onClick: function (e) { e.stopPropagation(); onAddPlaylist(item); } }, "＋加入")
+											h("span", { className: "s" }, item.desc || "")
 										]);
 									})
 								])
@@ -969,8 +1129,9 @@ window.__ModuleLoader__.load({
 							? h("div", { className: "dsa-notice" + (notice.kind ? " " + notice.kind : "") }, notice.text)
 							: null
 					])
-				])
-			]);
+					]),
+					shapeMenuOpen ? h(MoonyPicker, { selectedId: petId, onSelect: transformAsMoony }) : null
+				]);
 		}
 
 		/**

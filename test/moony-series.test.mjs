@@ -228,25 +228,62 @@ test('MusicPlayer preserves the selected Moony through the collapsed and expande
 	);
 
 	pet.props.onClick({ stopPropagation() {} });
-	let body = findNodes(harness.tree(), (node) => node.props?.className === 'dsa-body')[0];
-	let picker = findNodes(body, (node) => node.type === harness.client.MoonyPicker)[0];
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
+	findNodes(harness.tree(), (node) => node.props?.['data-moony-menu-toggle'])[0].props.onClick({ stopPropagation() {} });
+	let picker = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker)[0];
 	assert.equal(picker.props.selectedId, 'drift');
 	const pickerTree = picker.type(picker.props);
 	findNodes(pickerTree, (node) => node.props?.['data-moony-choice'] === 'echo')[0].props.onClick();
 	assert.equal(harness.storage.getItem('dsh-moony-singer:pet-id:v1'), 'echo');
-	body = findNodes(harness.tree(), (node) => node.props?.className === 'dsa-body')[0];
-	picker = findNodes(body, (node) => node.type === harness.client.MoonyPicker)[0];
-	assert.equal(picker.props.selectedId, 'echo');
-
-	findNodes(harness.tree(), (node) => node.type === 'button' && node.props?.title === '收起为宠物 / 展开播放器')[0].props.onClick({ stopPropagation() {} });
 	pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
+	assert.equal(pet.props.petId, 'echo');
 	pet.props.onPointerDown({ button: 0, clientX: 10, clientY: 10 });
 	harness.listeners.pointermove({ clientX: 20, clientY: 10 });
 	pet.props.onClick({ stopPropagation() {} });
 	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
 	pet.props.onClick({ stopPropagation() {} });
-	body = findNodes(harness.tree(), (node) => node.props?.className === 'dsa-body')[0];
-	assert.equal(findNodes(body, (node) => node.type === harness.client.MoonyPicker).length, 1);
+	findNodes(harness.tree(), (node) => node.props?.['data-moony-menu-toggle'])[0].props.onClick({ stopPropagation() {} });
+	picker = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker)[0];
+	assert.equal(picker.props.selectedId, 'echo');
+});
+
+test('transform menu shows seven static previews and selecting one immediately transforms', () => {
+	const harness = loadMusicPlayerHarness({ storedId: 'drift' });
+	findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0].props.onClick({ stopPropagation() {} });
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
+
+	const toggle = findNodes(harness.tree(), (node) => node.props?.['data-moony-menu-toggle'])[0];
+	assert.ok(toggle);
+	toggle.props.onClick({ stopPropagation() {} });
+	const expandedTree = harness.tree();
+	const card = findNodes(expandedTree, (node) => node.props?.className === 'dsa-card')[0];
+	assert.equal(
+		findNodes(card, (node) => node.type === harness.client.MoonyPicker).length,
+		0,
+		'the transform menu must render outside the overflow-hidden player card'
+	);
+	const picker = findNodes(expandedTree, (node) => node.type === harness.client.MoonyPicker)[0];
+	assert.ok(picker);
+	const menu = picker.type(picker.props);
+	assert.equal(findNodes(menu, (node) => node.props?.['data-moony-choice']).length, 7);
+	assert.equal(findNodes(menu, (node) => node.props?.className === 'dsa-moony-thumb').length, 7);
+
+	findNodes(menu, (node) => node.props?.['data-moony-choice'] === 'echo')[0].props.onClick();
+	assert.equal(harness.storage.getItem('dsh-moony-singer:pet-id:v1'), 'echo');
+	const transformed = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
+	assert.equal(transformed.props.petId, 'echo');
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
+});
+
+test('main transform button collapses with the current Moony without opening the menu', () => {
+	const harness = loadMusicPlayerHarness({ storedId: 'chorus' });
+	findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0].props.onClick({ stopPropagation() {} });
+	const transform = findNodes(harness.tree(), (node) => node.props?.['data-moony-transform'])[0];
+	assert.ok(transform);
+	transform.props.onClick({ stopPropagation() {} });
+	const pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
+	assert.equal(pet.props.petId, 'chorus');
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
 });
 
 test('MusicPlayer keeps character selection usable when acquiring localStorage throws', () => {
@@ -254,13 +291,14 @@ test('MusicPlayer keeps character selection usable when acquiring localStorage t
 	const pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
 	assert.equal(pet.props.petId, 'classic');
 	assert.doesNotThrow(() => pet.props.onClick({ stopPropagation() {} }));
+	findNodes(harness.tree(), (node) => node.props?.['data-moony-menu-toggle'])[0].props.onClick({ stopPropagation() {} });
 	const picker = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker)[0];
 	const pickerTree = picker.type(picker.props);
 	assert.doesNotThrow(() => findNodes(pickerTree, (node) => node.props?.['data-moony-choice'] === 'hush')[0].props.onClick());
-	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker)[0].props.selectedId, 'hush');
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0].props.petId, 'hush');
 });
 
-test('MusicPlayer hides through the footer control and renders one picker only inside the expanded body', () => {
+test('MusicPlayer hides through the footer control and renders the picker only from the transform menu', () => {
 	const harness = loadMusicPlayerHarness({ storedId: 'pulse' });
 	let footer = harness.footerToggle();
 	footer.props.children.props.onClick();
@@ -271,20 +309,23 @@ test('MusicPlayer hides through the footer control and renders one picker only i
 	let pet = findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0];
 	assert.ok(pet);
 	pet.props.onClick({ stopPropagation() {} });
+	assert.equal(findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPicker).length, 0);
+	findNodes(harness.tree(), (node) => node.props?.['data-moony-menu-toggle'])[0].props.onClick({ stopPropagation() {} });
 	const rendered = harness.renderPickers();
 	const body = findNodes(rendered, (node) => node.props?.className === 'dsa-body')[0];
-	const allPickers = findNodes(rendered, (node) => node.props?.className === 'dsa-moony-picker');
+	const allPickers = findNodes(rendered, (node) => node.props?.className === 'dsa-moony-menu');
 	assert.equal(allPickers.length, 1);
-	assert.equal(findNodes(body, (node) => node.props?.className === 'dsa-moony-picker').length, 1);
+	assert.equal(findNodes(body, (node) => node.props?.className === 'dsa-moony-menu').length, 0);
 });
 
-test('picker exposes seven buttons and selects the clicked character', () => {
+test('picker exposes seven static preview options and selects the clicked character', () => {
 	const { MoonyPicker } = loadClient();
 	let selected = null;
 	const tree = MoonyPicker({ selectedId: 'classic', onSelect(id) { selected = id; } });
 	const buttons = findNodes(tree, (node) => node.type === 'button');
 	assert.equal(buttons.length, 7);
-	assert.equal(buttons[0].props['aria-pressed'], true);
+	assert.equal(buttons[0].props['aria-checked'], true);
+	assert.equal(findNodes(tree, (node) => node.props?.className === 'dsa-moony-thumb').length, 7);
 	buttons.find((button) => button.props['data-moony-choice'] === 'chorus').props.onClick();
 	assert.equal(selected, 'chorus');
 });
@@ -350,6 +391,67 @@ test('Moony CSS defines every skin, tail, signal, and reduced-motion fallback', 
 	assert.doesNotMatch(MOONY_CSS, /dsa-agent-running[^}]*background:/);
 });
 
+test('playing Moony drives ears and tails with each character music tempo', () => {
+	const { MOONY_CSS, MoonyPet } = loadClient();
+	const tempos = [
+		['classic', 'float', '.86s'], ['pulse', 'beat', '.44s'], ['echo', 'orbit', '1.6s'], ['drift', 'drift', '1.35s'],
+		['spark', 'scan', '.72s'], ['chorus', 'chorus', '.62s'], ['hush', 'hush', '1.8s']
+	];
+	for (const [petId, motion, tempo] of tempos) {
+		const tree = MoonyPet({ petId, isPlaying: true });
+		assert.match(tree.props.className, /\bsinging\b/);
+		assert.equal(tree.props['data-moony-motion'], motion);
+		assert.match(MOONY_CSS, new RegExp(`data-moony-motion=['"]${motion}['"]\\]\\.singing\\{--moony-beat:${tempo.replace('.', '\\.')}`));
+	}
+	assert.match(MOONY_CSS, /\.dsa-moony-pet\.singing\[data-moony-motion\] \.dsa-moony-ear\{animation:dsa-moony-music-ear var\(--moony-beat/);
+	assert.match(MOONY_CSS, /\.dsa-moony-pet\.singing\[data-moony-motion\] \.dsa-moony-tail\{animation:dsa-moony-music-tail var\(--moony-beat/);
+	assert.match(MOONY_CSS, /@keyframes dsa-moony-music-ear/);
+	assert.match(MOONY_CSS, /@keyframes dsa-moony-music-tail/);
+});
+
+test('Echo idle tail sways through a finite arc instead of completing a full orbit', () => {
+	const { MOONY_CSS } = loadClient();
+	const idleRule = MOONY_CSS.match(/data-moony-motion='orbit'\] \.dsa-moony-tail\{([^}]*)\}/)?.[1];
+	const keyframes = MOONY_CSS.match(/@keyframes dsa-moony-idle-tail-orbit\{([^]*?)\}@keyframes dsa-moony-idle-tail-drift/)?.[1];
+	assert.ok(idleRule && keyframes);
+	assert.match(idleRule, /ease-in-out infinite alternate/);
+	assert.doesNotMatch(idleRule, /\blinear\b/);
+	assert.doesNotMatch(keyframes, /(?:1turn|360deg)/);
+
+	const angles = Array.from(keyframes.matchAll(/rotate:(-?\d+(?:\.\d+)?)deg/g), (match) => Number(match[1]));
+	assert.ok(angles.length >= 2, 'the sway must define both ends of its arc');
+	assert.ok(Math.max(...angles) - Math.min(...angles) <= 24, 'the sway arc must stay narrow enough to remain behind the face');
+});
+
+test('Drift keeps its drooping ears and comet visible around a media face', () => {
+	const { MOONY_CSS } = loadClient();
+	const earRule = MOONY_CSS.match(/data-moony-ear='drift'\] \.dsa-moony-ear\{([^}]*)\}/)?.[1];
+	const leftRule = MOONY_CSS.match(/data-moony-ear='drift'\] \.left\{([^}]*)\}/)?.[1];
+	const cometRule = MOONY_CSS.match(/data-moony-tail='comet'\]\{([^}]*)\}/)?.[1];
+	assert.ok(earRule && leftRule && cometRule);
+
+	const px = (rule, property) => Number(rule.match(new RegExp(`${property}:(-?\\d+)px`))?.[1]);
+	assert.ok(px(earRule, 'top') <= -16, 'Drift ear tips must remain visibly above the media face');
+	assert.ok(px(earRule, 'height') >= 58, 'Drift ears must retain their long drooping silhouette');
+	assert.ok(px(leftRule, 'left') <= -7, 'Drift ears must remain visible beside the media face');
+	assert.ok(-px(cometRule, 'right') >= 16, 'Drift comet must extend clearly beyond the media face');
+	assert.doesNotMatch(cometRule, /transparent/, 'the exposed comet tip must keep visible character color');
+});
+
+test('Moony stacks tails behind the face and ears with their signals in front', () => {
+	const { MOONY_CSS } = loadClient();
+	const rule = (selector) => MOONY_CSS.match(new RegExp(`${selector}\\{([^}]*)\\}`))?.[1];
+	const zIndex = (body) => Number(body?.match(/z-index:(-?\d+)/)?.[1]);
+	const tailZ = zIndex(rule('\\.dsa-moony-tail'));
+	const faceZ = zIndex(rule('\\.dsa-moony-face'));
+	const earZ = zIndex(rule('\\.dsa-moony-ear'));
+	const signalZ = zIndex(rule('\\.dsa-moony-signal'));
+
+	assert.ok(tailZ < faceZ, 'every tail must stay behind the media face');
+	assert.ok(faceZ < earZ, 'every ear must remain visible in front of the media face');
+	assert.ok(earZ < signalZ, 'ear-tip signals must be the frontmost identity layer');
+});
+
 test('Moony signal states glow at the ear outline without replacing base ear color', () => {
 	const { MOONY_CSS } = loadClient();
 	for (const state of ['running', 'waiting', 'failed', 'review']) {
@@ -362,7 +464,7 @@ test('Moony signal states glow at the ear outline without replacing base ear col
 	assert.doesNotMatch(MOONY_CSS, /@keyframes dsa-moony-(?:running|waiting|failed|review)[^{]*\{[^}]*transform:/);
 });
 
-test('Hush exposes its complete signal above the media face without raising ears over it', () => {
+test('Hush exposes its complete front-layer signal above the media face', () => {
 	const { MOONY_CSS } = loadClient();
 	const hushRule = MOONY_CSS.match(/data-moony-ear='hush'\] \.dsa-moony-ear\{([^}]*)\}/)?.[1];
 	const earRule = MOONY_CSS.match(/\.dsa-moony-ear\{([^}]*)\}/)?.[1];
@@ -373,8 +475,9 @@ test('Hush exposes its complete signal above the media face without raising ears
 	const signalTop = Number(signalRule.match(/top:(\d+)px/)?.[1]);
 	const signalHeight = Number(signalRule.match(/height:(\d+)px/)?.[1]);
 	assert.ok(-hushTop >= signalTop + signalHeight, 'Hush must expose the full ear signal above the face');
-	assert.match(earRule, /z-index:1/);
-	assert.match(faceRule, /z-index:3/);
+	const zIndex = (rule) => Number(rule.match(/z-index:(-?\d+)/)?.[1]);
+	assert.ok(zIndex(earRule) > zIndex(faceRule));
+	assert.ok(zIndex(signalRule) > zIndex(earRule));
 });
 
 test('running reversal only targets the Moony right ear', () => {
