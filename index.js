@@ -243,6 +243,10 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 		async claim(args) {
 			const token = args && args.token ? String(args.token) : null;
 			if (!token) throw new Error('缺少 token。');
+			// 不可见页面（后台/隐藏，如 Codex 的预览浏览器）不能成为播放者
+			if (args && args.visible === false) {
+				return { ok: true, isAudioOwner: false };
+			}
 			const owned = player.claimOwner(token, Boolean(args && args.force));
 			return { ok: true, isAudioOwner: owned && player.isOwner(token) };
 		},

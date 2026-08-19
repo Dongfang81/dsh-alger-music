@@ -244,7 +244,7 @@ window.__ModuleLoader__.load({
 				h("span", { key: "left", className: "dsa-moony-ear left" }, h("i", { className: "dsa-moony-signal" })),
 				h("span", { key: "right", className: "dsa-moony-ear right" }, h("i", { className: "dsa-moony-signal" })),
 				h("span", { key: "face", className: "dsa-moony-face" }, value.faceMode === "media" ? h("img", { key: value.mediaUrl, src: value.mediaUrl, alt: "", draggable: false, onLoad: function (event) { event.currentTarget.hidden = false; }, onError: function (event) { event.currentTarget.hidden = true; } }) : null),
-				h(MoonyPhaseRing, { key: "phase", progress: input.playbackProgress, buffering: input.isBuffering })
+				MoonyPhaseRing({ key: "phase", progress: input.playbackProgress, buffering: input.isBuffering })
 			];
 			return h("div", {
 				className: "dsa-pet dsa-moony-pet" + (input.isPlaying ? " singing" : "") + " dsa-agent-" + value.status,
@@ -268,7 +268,9 @@ window.__ModuleLoader__.load({
 			return fetch("/dsh-alger/state?token=" + encodeURIComponent(PAGE_TOKEN), { cache: "no-store" }).then(function (r) { return r.json(); });
 		}
 		function claimPlayback(force) {
-			return post("/dsh-alger/claim", { token: PAGE_TOKEN, force: !!force }).catch(function () { /* 忽略 */ });
+			// visible=true：只有用户正在看的页面能成为播放者（后台/隐藏页面不抢播放权）
+			var visible = typeof document !== "undefined" ? !document.hidden : true;
+			return post("/dsh-alger/claim", { token: PAGE_TOKEN, force: !!force, visible: visible }).catch(function () { /* 忽略 */ });
 		}
 		function post(path, body) {
 			return fetch(path, {
@@ -374,6 +376,12 @@ window.__ModuleLoader__.load({
 			".dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-spark-body 2.4s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-ear{animation:dsa-moony-dance-spark-ear 2.4s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='scan'].singing .dsa-moony-ear::after{content:'';position:absolute;left:50%;top:-5px;width:9px;height:9px;border-radius:50%;background:var(--moony-rim);box-shadow:0 0 5px var(--moony-rim),0 0 14px var(--moony-rim),0 0 24px var(--moony-light-soft);translate:-50% 0;opacity:0;pointer-events:none;animation:dsa-moony-dance-spark-flash 2.4s linear infinite}",
 			".dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-chorus-body 4.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-ear{animation:dsa-moony-dance-chorus-ear 4.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-ear.right{animation-delay:-.18s}.dsa-moony-pet[data-moony-motion='chorus'].singing .dsa-moony-tail{animation:dsa-moony-dance-chorus-tail 4.8s ease-in-out infinite}",
 			".dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-hush-body 4.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-ear{animation:dsa-moony-dance-hush-ear 4.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='hush'].singing .dsa-moony-ear.right{animation-delay:-2.4s}",
+			".dsa-moony-pet[data-moony-motion='loop'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-loop-body 1.8s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='loop'].singing .dsa-moony-ear{animation:dsa-moony-dance-loop-ear .9s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='loop'].singing .dsa-moony-ear.right{animation-delay:-.45s}",
+			".dsa-moony-pet[data-moony-motion='bass'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-bass-body 1.4s cubic-bezier(.2,.7,.25,1) infinite}.dsa-moony-pet[data-moony-motion='bass'].singing .dsa-moony-ear{animation:dsa-moony-dance-bass-ear 1.4s cubic-bezier(.2,.7,.25,1) infinite}",
+			".dsa-moony-pet[data-moony-motion='solo'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-solo-body 2.4s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='solo'].singing .dsa-moony-ear{animation:dsa-moony-dance-solo-ear 2.4s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='solo'].singing .dsa-moony-ear.right{animation-delay:-.6s}",
+			".dsa-moony-pet[data-moony-motion='vinyl'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-vinyl-body 3.6s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='vinyl'].singing .dsa-moony-ear{animation:dsa-moony-dance-vinyl-ear 3.6s linear infinite}.dsa-moony-pet[data-moony-motion='vinyl'].singing .dsa-moony-tail{animation:dsa-moony-dance-vinyl-tail 3.6s ease-in-out infinite alternate}",
+			".dsa-moony-pet[data-moony-motion='aurora'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-aurora-body 5.2s ease-in-out infinite}.dsa-moony-pet[data-moony-motion='aurora'].singing .dsa-moony-ear{animation:dsa-moony-dance-aurora-ear 5.2s ease-in-out infinite alternate}.dsa-moony-pet[data-moony-motion='aurora'].singing .dsa-moony-ear.right{animation-delay:-2.6s}",
+			".dsa-moony-pet[data-moony-motion='static'].singing .dsa-moony-rhythm{animation:dsa-moony-dance-static-body 2.8s steps(1,end) infinite}.dsa-moony-pet[data-moony-motion='static'].singing .dsa-moony-ear{animation:dsa-moony-dance-static-ear 2.8s steps(1,end) infinite}.dsa-moony-pet[data-moony-motion='static'].singing .dsa-moony-ear::after{content:'';position:absolute;left:12%;right:8%;top:3px;height:3px;background:var(--moony-rim);box-shadow:0 9px 0 var(--moony-light-soft);opacity:0;pointer-events:none;animation:dsa-moony-dance-static-glitch 2.8s steps(1,end) infinite}",
 			"@keyframes dsa-moony-dance-classic-body{0%,100%{translate:0 0}25%{translate:0 -1px}50%{translate:0 0}75%{translate:0 -2px}}@keyframes dsa-moony-dance-classic-ear{0%,100%{rotate:-2deg;translate:0 0}50%{rotate:2deg;translate:0 -2px}}",
 			"@keyframes dsa-moony-dance-pulse-body{0%,100%{translate:0 0;scale:1}50%{translate:0 -2px;scale:1.015}}@keyframes dsa-moony-dance-pulse-ear{from{rotate:-5deg;translate:0 3px;scale:.97 1}to{rotate:6deg;translate:0 -5px;scale:1 1.04}}",
 			"@keyframes dsa-moony-dance-echo-body{0%,100%{translate:0 0}35%{translate:-1px -1px}70%{translate:1px -2px}}@keyframes dsa-moony-dance-echo-ear{0%,18%,100%{rotate:-3deg;translate:0 1px}38%{rotate:7deg;translate:0 -4px}58%{rotate:1deg;translate:0 -1px}}@keyframes dsa-moony-dance-echo-tail{0%,18%,100%{rotate:-6deg;translate:0 1px}38%{rotate:8deg;translate:1px -2px}58%{rotate:2deg;translate:0 0}}",
@@ -381,10 +389,18 @@ window.__ModuleLoader__.load({
 			"@keyframes dsa-moony-dance-spark-body{0%,100%{translate:0 0;scale:1}4%{translate:0 -3px;scale:1.025}10%{translate:0 0;scale:1}52%{translate:0 -1px}}@keyframes dsa-moony-dance-spark-ear{0%,100%{rotate:-2deg;translate:0 0}4%{rotate:7deg;translate:0 -4px}10%{rotate:0;translate:0 -1px}52%{rotate:2deg;translate:0 -2px}}@keyframes dsa-moony-dance-spark-flash{0%,3%,10%,100%{opacity:0;scale:.4}4%,7%{opacity:1;scale:1.35}}",
 			"@keyframes dsa-moony-dance-chorus-body{0%,25%,50%,100%{translate:0 0;scale:1}12.5%,37.5%{translate:0 -2px;scale:1.01}62.5%,87.5%{translate:0 -5px;scale:1.035}75%{translate:0 1px;scale:1.01}}@keyframes dsa-moony-dance-chorus-ear{0%,25%,50%,100%{rotate:-3deg;translate:0 0}12.5%,37.5%{rotate:4deg;translate:0 -2px}62.5%,87.5%{rotate:10deg;translate:0 -6px}75%{rotate:-7deg;translate:0 1px}}@keyframes dsa-moony-dance-chorus-tail{0%,25%,50%,100%{rotate:-5deg;translate:0 1px}12.5%,37.5%{rotate:5deg;translate:0 -1px}62.5%{rotate:13deg;translate:2px -3px}75%{rotate:-10deg;translate:-1px 2px}87.5%{rotate:10deg;translate:1px -3px}}",
 			"@keyframes dsa-moony-dance-hush-body{0%,100%{translate:0 0;scale:1}50%{translate:0 -1px;scale:1.012}}@keyframes dsa-moony-dance-hush-ear{0%,100%{rotate:-1deg;translate:0 0;scale:1}50%{rotate:1deg;translate:0 -1px;scale:1.01}}",
-			"@keyframes dsa-moony-idle-float{from{rotate:-2deg}to{rotate:2deg}}@keyframes dsa-moony-idle-beat{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-orbit{from{rotate:-2deg}to{rotate:3deg}}@keyframes dsa-moony-idle-drift{from{translate:0 0}to{translate:0 2px}}@keyframes dsa-moony-idle-scan{from{rotate:-1deg}to{rotate:3deg}}@keyframes dsa-moony-idle-chorus{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-hush{from{scale:1}to{scale:.98}}@keyframes dsa-moony-idle-tail-orbit{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-idle-tail-drift{from{translate:0 0}to{translate:1px -2px}}@keyframes dsa-moony-idle-tail-chorus{from{rotate:-2deg}to{rotate:5deg}}",
+			"@keyframes dsa-moony-dance-loop-body{0%,100%{translate:0 0}50%{translate:0 -2px}}@keyframes dsa-moony-dance-loop-ear{0%,100%{rotate:-5deg;scale:1}50%{rotate:5deg;scale:1.04}}",
+			"@keyframes dsa-moony-dance-bass-body{0%,58%,100%{translate:0 1px;scale:1 .98}68%{translate:0 -3px;scale:1.035 1.02}80%{translate:0 0;scale:1}}@keyframes dsa-moony-dance-bass-ear{0%,58%,100%{rotate:-2deg;translate:0 2px}68%{rotate:4deg;translate:0 -3px}82%{rotate:0;translate:0 0}}",
+			"@keyframes dsa-moony-dance-solo-body{0%,100%{rotate:-1deg;translate:0 0}35%{rotate:2deg;translate:1px -2px}70%{rotate:-2deg;translate:-1px -1px}}@keyframes dsa-moony-dance-solo-ear{0%,100%{rotate:-4deg;translate:0 0}28%{rotate:8deg;translate:0 -4px}58%{rotate:1deg;translate:0 -1px}}",
+			"@keyframes dsa-moony-dance-vinyl-body{0%,100%{translate:0 0}50%{translate:0 -2px}}@keyframes dsa-moony-dance-vinyl-ear{from{rotate:0deg}to{rotate:360deg}}@keyframes dsa-moony-dance-vinyl-tail{from{rotate:-5deg;translate:0 1px}to{rotate:9deg;translate:1px -2px}}",
+			"@keyframes dsa-moony-dance-aurora-body{0%,100%{translate:-1px 1px;rotate:-1deg}50%{translate:2px -3px;rotate:1deg}}@keyframes dsa-moony-dance-aurora-ear{from{rotate:-5deg;translate:-1px 1px;scale:.98 1}to{rotate:6deg;translate:2px -3px;scale:1.03 1.04}}",
+			"@keyframes dsa-moony-dance-static-body{0%,82%,100%{translate:0 0}84%{translate:2px -1px}86%{translate:-1px 1px}88%{translate:0 0}}@keyframes dsa-moony-dance-static-ear{0%,82%,100%{translate:0 0;rotate:0deg}84%{translate:3px 0;rotate:3deg}86%{translate:-2px 1px;rotate:-2deg}88%{translate:0 0;rotate:0deg}}@keyframes dsa-moony-dance-static-glitch{0%,81%,89%,100%{opacity:0}82%,84%,86%{opacity:.9}}",
+			"@keyframes dsa-moony-idle-float{from{rotate:-2deg}to{rotate:2deg}}@keyframes dsa-moony-idle-beat{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-orbit{from{rotate:-2deg}to{rotate:3deg}}@keyframes dsa-moony-idle-drift{from{translate:0 0}to{translate:0 2px}}@keyframes dsa-moony-idle-scan{from{rotate:-1deg}to{rotate:3deg}}@keyframes dsa-moony-idle-chorus{from{translate:0 0}to{translate:0 -2px}}@keyframes dsa-moony-idle-hush{from{scale:1}to{scale:.98}}@keyframes dsa-moony-idle-loop{0%,100%{rotate:-2deg}50%{rotate:2deg}}@keyframes dsa-moony-idle-bass{0%,100%{translate:0 1px}50%{translate:0 -1px}}@keyframes dsa-moony-idle-solo{from{rotate:-2deg}to{rotate:3deg}}@keyframes dsa-moony-idle-vinyl{from{rotate:0deg}to{rotate:360deg}}@keyframes dsa-moony-idle-aurora{from{translate:-1px 1px;rotate:-2deg}to{translate:1px -2px;rotate:3deg}}@keyframes dsa-moony-idle-static{0%,91%,100%{translate:0 0}93%{translate:1px 0}95%{translate:-1px 0}}@keyframes dsa-moony-idle-tail-orbit{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-idle-tail-drift{from{translate:0 0}to{translate:1px -2px}}@keyframes dsa-moony-idle-tail-chorus{from{rotate:-2deg}to{rotate:5deg}}@keyframes dsa-moony-idle-tail-vinyl{from{rotate:-4deg}to{rotate:6deg}}",
+			"@keyframes dsa-moony-phase-flow{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}",
 			"@keyframes dsa-moony-running{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-waiting{0%,100%{translate:-1px 0}50%{translate:2px 1px}}@keyframes dsa-moony-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-review{from{translate:0 0}to{translate:0 -3px}}",
 			"@keyframes dsa-moony-tail-sway{from{rotate:-5deg}to{rotate:7deg}}@keyframes dsa-moony-tail-listen{0%,100%{translate:0 0}50%{translate:0 -2px}}@keyframes dsa-moony-tail-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-tail-review{from{translate:0 0}to{translate:0 -2px}}",
-			"@media (prefers-reduced-motion:reduce){.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-ear::after,.dsa-moony-tail{animation:none!important}}"
+			".dsa-moony-menu{position:absolute;right:0;top:48px;z-index:30;width:224px;max-height:min(420px,calc(100vh - 120px));overflow-y:auto;overscroll-behavior:contain;padding:6px;border:1px solid rgba(255,255,255,.2);border-radius:12px;background:rgba(21,22,31,.96);box-shadow:0 14px 34px rgba(0,0,0,.48);backdrop-filter:blur(18px);display:grid;gap:3px;scrollbar-width:thin}",
+			"@media (prefers-reduced-motion:reduce){.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-ear::after,.dsa-moony-tail,.dsa-moony-phase-gap{animation:none!important}}"
 		].join("\n");
 		var CSS = [
 			"#dsh-alger-root{position:fixed;left:0;top:0;z-index:2147483000;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;user-select:none;color:#fff}",
@@ -406,7 +422,6 @@ window.__ModuleLoader__.load({
 			".dsa-mode-icon{width:24px;height:24px;color:rgba(255,255,255,0.8)}",
 			".dsa-shape-wrap{position:relative;display:flex;align-items:stretch;border-radius:9px;background:linear-gradient(135deg,#fbbf24,#f97316);box-shadow:0 0 10px rgba(251,146,60,0.55),0 2px 8px rgba(0,0,0,0.3);transition:filter .15s,box-shadow .15s}.dsa-shape-wrap:hover{filter:brightness(1.08);box-shadow:0 0 16px rgba(251,146,60,0.8),0 2px 10px rgba(0,0,0,0.35)}",
 			".dsa-shape{font-size:11px;font-weight:700;width:auto;min-width:42px;padding:0 7px;border-radius:9px 0 0 9px;color:#1c1200}.dsa-shape-arrow{width:22px;border-left:1px solid rgba(89,48,0,.25);border-radius:0 9px 9px 0;color:#1c1200;font-size:10px}.dsa-shape:hover,.dsa-shape-arrow:hover{background:rgba(255,255,255,.2)}",
-			".dsa-moony-menu{position:absolute;right:0;top:48px;z-index:30;width:224px;padding:6px;border:1px solid rgba(255,255,255,.2);border-radius:12px;background:rgba(21,22,31,.96);box-shadow:0 14px 34px rgba(0,0,0,.48);backdrop-filter:blur(18px);display:grid;gap:3px}",
 			".dsa-moony-option{width:100%;height:42px;border:1px solid transparent;border-radius:9px;background:transparent;color:#fff;display:flex;align-items:center;gap:8px;padding:5px 7px;text-align:left;cursor:pointer}.dsa-moony-option:hover{background:rgba(255,255,255,.09)}.dsa-moony-option.on{border-color:rgba(251,191,36,.5);background:rgba(251,146,60,.13)}",
 			".dsa-moony-option-copy{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}.dsa-moony-option-copy strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dsa-moony-option-copy small{margin-top:2px;font-size:9px;color:rgba(255,255,255,.58)}.dsa-moony-option-check{width:14px;color:#fbbf24;font-size:12px;text-align:center}",
 			".dsa-body{padding:2px 12px 12px}",
@@ -651,9 +666,14 @@ window.__ModuleLoader__.load({
 				getState().then(function (s) { setState(s); }).catch(function () { /* 忽略瞬时失败 */ });
 			}, []);
 
-			// 挂载时声明一次播放者身份（首个页面出声；之后交互可抢占）
+			// 挂载时声明播放者身份：可见页面加载即抢占（用户刷新/打开页面后自动拿回播放权）；
+			// 不可见页面（后台预览）不抢。
 			React.useEffect(function () {
-				claimPlayback();
+				if (typeof document === "undefined" || !document.hidden) {
+					claimPlayback(true);
+				} else {
+					claimPlayback(false);
+				}
 			}, []);
 
 			// 轮询
@@ -669,6 +689,7 @@ window.__ModuleLoader__.load({
 			var audioRef = React.useRef(null);
 			var lastUrlRef = React.useRef(null); // 已加载的直链，避免重复播放
 			var [prog, setProg] = React.useState({ pos: 0, dur: 0 }); // 进度条显示（audio 实时事件驱动）
+			var [buffering, setBuffering] = React.useState(false); // waiting/stalled 到 canplay/playing 的真实缓冲窗口
 			var seekingRef = React.useRef(false); // 拖动中不刷新滑块位置
 			// 创建 audio 元素（惰性，仅一次）
 			React.useEffect(function () {
@@ -691,8 +712,10 @@ window.__ModuleLoader__.load({
 				audio.addEventListener("error", function () {
 					reportPlayback({ playing: false, position: 0, duration: audio.duration || 0, ready: true });
 				});
+				var unbindBuffering = bindAudioBuffering(audio, setBuffering);
 				audioRef.current = audio;
 				return function () {
+					unbindBuffering();
 					try { audio.pause(); audio.src = ""; } catch { /* ignore */ }
 					if (audio.parentNode) audio.parentNode.removeChild(audio);
 					audioRef.current = null;
@@ -1114,7 +1137,8 @@ window.__ModuleLoader__.load({
 						? h("div", { className: "dsa-pet-notes" }, [h("span", null, "♪"), h("span", null, "♫"), h("span", null, "♪")])
 						: null,
 					h(MoonyPet, {
-						petId: petId, agentStatus: state && state.agentStatus, mediaUrl: petImg, isPlaying: isPlaying, ambientColor: ambientColor,
+					petId: petId, agentStatus: state && state.agentStatus, mediaUrl: petImg, isPlaying: isPlaying, ambientColor: ambientColor,
+					playbackProgress: prog.dur > 0 ? prog.pos / prog.dur : 0, isBuffering: Boolean(playing && buffering),
 						title: getMoony(petId).name + " · 展开播放器", onPointerDown: onDragStart,
 						onClick: function (event) {
 							event.stopPropagation();
@@ -1364,6 +1388,8 @@ window.__ModuleLoader__.load({
 		exports.getMoony = getMoony;
 		exports.dominantColorFromPixels = dominantColorFromPixels;
 		exports.extractAmbientColor = extractAmbientColor;
+		exports.resolveMoonPhase = resolveMoonPhase;
+		exports.bindAudioBuffering = bindAudioBuffering;
 		exports.readStoredMoonyId = readStoredMoonyId;
 		exports.writeStoredMoonyId = writeStoredMoonyId;
 		exports.resolveMoonyState = resolveMoonyState;
