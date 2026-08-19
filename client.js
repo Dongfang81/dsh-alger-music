@@ -865,6 +865,8 @@ window.__ModuleLoader__.load({
 			var onSearch = function (forcedType) {
 				var q = query.trim();
 				if (!q) return;
+				// 展开搜索时收起播放列表，给搜索结果腾空间（搜索区在播放列表上方）
+				setQueueOpen(false);
 				// 切换 tab 重搜时显式传 type，避免 setTimeout 闭包捕获旧的 searchType 导致搜错类型
 				var t = typeof forcedType === "number" ? forcedType : searchType;
 				setSearched(true);
@@ -894,6 +896,7 @@ window.__ModuleLoader__.load({
 						setBusy(false);
 						if (jr && jr.ok) flash("ok", "已添加并播放：" + (jr.playedName || item.name));
 						else flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
+						setQueueOpen(true); // 添加成功：自动展开播放列表展示新歌
 						setTimeout(refresh, 600);
 					});
 				}).catch(function () { setBusy(false); flash("err", "添加失败"); });
@@ -906,6 +909,7 @@ window.__ModuleLoader__.load({
 				queueApi({ action: "add-all", keyword: q, limit: 30 }).then(function (r) {
 					if (!r || !r.ok) { setBusy(false); flash("err", (r && r.guidance) || (r && r.error) || "加入失败"); return; }
 					flash("ok", "已一键加入播放列表（" + (r.added || 0) + " 首）");
+					setQueueOpen(true); // 一键加入：自动展开播放列表
 					// 当前没在播放时，自动从这批歌的第一首开始按顺序播
 					if (!isPlaying) {
 						var added = r.added || 0;
@@ -933,6 +937,7 @@ window.__ModuleLoader__.load({
 						setBusy(false);
 						if (jr && jr.ok) flash("ok", "歌单已添加并播放：" + (item.name || "") + "（" + added + " 首）");
 						else flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
+						setQueueOpen(true); // 歌单添加成功：自动展开播放列表
 						setTimeout(refresh, 600);
 					});
 				}).catch(function () { setBusy(false); flash("err", "添加失败"); });
@@ -1196,6 +1201,76 @@ window.__ModuleLoader__.load({
 									h("span", { className: "tp" }, fmtClock(prog.dur))
 								])
 							: null,
+						// 搜索点歌（未搜索时只显示输入框，不显示歌曲/歌单 tab）
+						h("div", { className: "dsa-search" }, [
+							h("input", {
+								className: "dsa-input",
+								placeholder: searchType === 1 ? "搜歌名/歌手，回车或点搜索" : "搜歌单名，回车或点搜索",
+								value: query,
+								disabled: busy,
+								onChange: function (e) { setQuery(e.target.value); },
+								onFocus: function () { setQueueOpen(false); }, // 聚焦搜索：收起播放列表
+								onKeyDown: onSearchKey
+							}),
+							h("button", {
+								className: "dsa-go",
+								disabled: searching || busy || !query.trim(),
+								onClick: onSearch
+							}, searching
+								? "…"
+								: h("svg", { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" }, [
+										h("circle", { cx: 11, cy: 11, r: 7 }),
+										h("line", { x1: 21, y1: 21, x2: 16.2, y2: 16.2 })
+									])
+							)
+						]),
+						// 搜索结果（搜索后出现歌曲/歌单 tab + 关闭按钮；歌曲：双击播放 + 加入；歌单：双击播放歌单 + 整单加入）
+						searched
+							? h("div", { className: "dsa-types" }, [
+									h("button", { className: "dsa-type" + (searchType === 1 ? " active" : ""), onClick: function () { switchType(1); } }, "歌曲"),
+									h("button", { className: "dsa-type" + (searchType === 1000 ? " active" : ""), onClick: function () { switchType(1000); } }, "歌单"),
+									h("button", {
+										className: "dsa-close-results",
+										title: "收起搜索结果",
+										onClick: function () {
+											setResults(null);
+											setSearched(false);
+											setQuery("");
+											setQueueOpen(true); // 关闭搜索：展开播放列表回到浏览态
+										}
+									}, "✕")
+								])
+							: null,
+						results && results.length > 0
+							? h("div", { className: "dsa-results" }, [
+									searchType === 1
+										? h("button", { className: "dsa-addall", disabled: busy, onClick: onAddAll }, "＋ 一键加入播放列表")
+										: null,
+									results.map(function (item) {
+										if (searchType === 1) {
+											return h("div", {
+												key: item.id,
+												className: "dsa-item",
+												title: "双击：添加并播放 " + item.name,
+												onDoubleClick: function () { onPlaySong(item); }
+											}, [
+												h("span", { className: "t" }, item.name),
+												h("span", { className: "s" }, item.artists || ""),
+												h("span", { className: "p" }, item.durationMs ? Math.floor(item.durationMs / 60000) + ":" + String(Math.floor(item.durationMs / 1000) % 60).padStart(2, "0") : "")
+											]);
+										}
+										return h("div", {
+											key: item.id,
+											className: "dsa-item",
+											title: "双击：添加歌单并播放 " + item.name,
+											onDoubleClick: function () { onPlayPlaylist(item); }
+										}, [
+											h("span", { className: "t" }, item.name),
+											h("span", { className: "s" }, item.desc || "")
+										]);
+									})
+								])
+							: null,
 						// 播放列表
 						state && state.queue && Array.isArray(state.queue.items)
 							? h("div", { className: "dsa-queue" }, [
@@ -1230,74 +1305,6 @@ window.__ModuleLoader__.load({
 												])
 											])
 										: null
-								])
-							: null,
-						// 搜索点歌（未搜索时只显示输入框，不显示歌曲/歌单 tab）
-						h("div", { className: "dsa-search" }, [
-							h("input", {
-								className: "dsa-input",
-								placeholder: searchType === 1 ? "搜歌名/歌手，回车或点搜索" : "搜歌单名，回车或点搜索",
-								value: query,
-								disabled: busy,
-								onChange: function (e) { setQuery(e.target.value); },
-								onKeyDown: onSearchKey
-							}),
-							h("button", {
-								className: "dsa-go",
-								disabled: searching || busy || !query.trim(),
-								onClick: onSearch
-							}, searching
-								? "…"
-								: h("svg", { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" }, [
-										h("circle", { cx: 11, cy: 11, r: 7 }),
-										h("line", { x1: 21, y1: 21, x2: 16.2, y2: 16.2 })
-									])
-							)
-						]),
-						// 搜索结果（搜索后出现歌曲/歌单 tab + 关闭按钮；歌曲：双击播放 + 加入；歌单：双击播放歌单 + 整单加入）
-						searched
-							? h("div", { className: "dsa-types" }, [
-									h("button", { className: "dsa-type" + (searchType === 1 ? " active" : ""), onClick: function () { switchType(1); } }, "歌曲"),
-									h("button", { className: "dsa-type" + (searchType === 1000 ? " active" : ""), onClick: function () { switchType(1000); } }, "歌单"),
-									h("button", {
-										className: "dsa-close-results",
-										title: "收起搜索结果",
-										onClick: function () {
-											setResults(null);
-											setSearched(false);
-											setQuery("");
-										}
-									}, "✕")
-								])
-							: null,
-						results && results.length > 0
-							? h("div", { className: "dsa-results" }, [
-									searchType === 1
-										? h("button", { className: "dsa-addall", disabled: busy, onClick: onAddAll }, "＋ 一键加入播放列表")
-										: null,
-									results.map(function (item) {
-										if (searchType === 1) {
-											return h("div", {
-												key: item.id,
-												className: "dsa-item",
-												title: "双击：添加并播放 " + item.name,
-												onDoubleClick: function () { onPlaySong(item); }
-											}, [
-												h("span", { className: "t" }, item.name),
-												h("span", { className: "s" }, item.artists || ""),
-												h("span", { className: "p" }, item.durationMs ? Math.floor(item.durationMs / 60000) + ":" + String(Math.floor(item.durationMs / 1000) % 60).padStart(2, "0") : "")
-											]);
-										}
-										return h("div", {
-											key: item.id,
-											className: "dsa-item",
-											title: "双击：添加歌单并播放 " + item.name,
-											onDoubleClick: function () { onPlayPlaylist(item); }
-										}, [
-											h("span", { className: "t" }, item.name),
-											h("span", { className: "s" }, item.desc || "")
-										]);
-									})
 								])
 							: null,
 						// 通知
