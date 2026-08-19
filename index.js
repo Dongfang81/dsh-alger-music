@@ -433,13 +433,20 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 			return { ok: true, steps, playedName: song.name, playedId: song.id, confirmed: true };
 		},
 
-		/** alger_queue：播放列表操作（追加 / 插入下一首 / 整单播放 / 跳转） */
+		/** alger_queue：播放列表操作（追加 / 插入下一首 / 整单播放 / 跳转 / 清空） */
 		async queue(args) {
 			const action = String(args?.action ?? '');
-			if (!['add', 'add-all', 'add-next', 'playlist', 'playlist-add', 'jump'].includes(action))
-				throw new Error('action 需为 add / add-all / add-next / playlist / playlist-add / jump。');
+			if (!['add', 'add-all', 'add-next', 'playlist', 'playlist-add', 'jump', 'clear'].includes(action))
+				throw new Error('action 需为 add / add-all / add-next / playlist / playlist-add / jump / clear。');
 			const steps = [];
 			const log = (s) => steps.push(String(s));
+
+			// 清空播放列表
+			if (action === 'clear') {
+				player.clearQueue();
+				log('播放列表已清空');
+				return { ok: true, steps, mode: 'clear', queueLength: 0 };
+			}
 
 			// 1) 解析歌曲/歌单数据
 			let songs = [];
@@ -727,13 +734,13 @@ function buildTools(cfg, actions) {
 	const queue = {
 		name: 'alger_queue',
 		description:
-			'播放列表操作：action=add 把指定歌曲（songId 或 keyword 最佳匹配）追加到播放列表末尾；action=add-all 把某关键词的全部搜索结果（limit 控制数量）一键加入播放列表；action=add-next 插入到当前歌曲之后；action=playlist 按 playlistId 整单播放歌单（替换队列并立即播放第一首）；action=playlist-add 把歌单全部歌曲追加到播放列表末尾（不播放）；action=jump 按 index 跳转播放队列中指定位置的歌曲（队列不变）。',
+			'播放列表操作：action=add 把指定歌曲（songId 或 keyword 最佳匹配）追加到播放列表末尾；action=add-all 把某关键词的全部搜索结果（limit 控制数量）一键加入播放列表；action=add-next 插入到当前歌曲之后；action=playlist 按 playlistId 整单播放歌单（替换队列并立即播放第一首）；action=playlist-add 把歌单全部歌曲追加到播放列表末尾（不播放）；action=jump 按 index 跳转播放队列中指定位置的歌曲（队列不变）；action=clear 清空播放列表。',
 		parameters: compileParameters({
 			action: {
 				type: 'string',
-				enum: ['add', 'add-all', 'add-next', 'playlist', 'playlist-add', 'jump'],
+				enum: ['add', 'add-all', 'add-next', 'playlist', 'playlist-add', 'jump', 'clear'],
 				required: true,
-				description: '操作：add=追加单曲；add-all=整批搜索结果加入；add-next=插入下一首；playlist=整单播放歌单；playlist-add=歌单整单追加到播放列表；jump=按 index 跳转播放。'
+				description: '操作：add=追加单曲；add-all=整批搜索结果加入；add-next=插入下一首；playlist=整单播放歌单；playlist-add=歌单整单追加到播放列表；jump=按 index 跳转播放；clear=清空播放列表。'
 			},
 			songId: { type: 'integer', description: '歌曲 id（add/add-next 用，与 keyword 二选一）。' },
 			keyword: { type: 'string', description: '歌名/歌手关键词（add/add-next/add-all 用）。' },
