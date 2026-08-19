@@ -44,13 +44,10 @@ window.__ModuleLoader__.load({
 			Object.freeze({ id: "hush", name: "Moony · Hush", role: "安静陪伴者", ear: "hush", tail: "none", motion: "hush", colors: Object.freeze({ ear: "#647654", highlight: "#B9C5A6", rim: "#DBE3CE" }) }),
 			Object.freeze({ id: "loop", name: "Moony · Loop", role: "循环收藏家", ear: "loop", tail: "none", motion: "loop", colors: Object.freeze({ ear: "#238E91", highlight: "#7FE2D7", rim: "#BFF7EE" }) }),
 			Object.freeze({ id: "bass", name: "Moony · Bass", role: "低频承载者", ear: "bass", tail: "none", motion: "bass", colors: Object.freeze({ ear: "#3E365C", highlight: "#82739F", rim: "#C9B9E6" }) }),
-			Object.freeze({ id: "solo", name: "Moony · Solo", role: "独奏聆听者", ear: "solo", tail: "none", motion: "solo", colors: Object.freeze({ ear: "#B7802D", highlight: "#F2CA75", rim: "#FFE6A8" }) }),
-			Object.freeze({ id: "vinyl", name: "Moony · Vinyl", role: "黑胶漫游者", ear: "vinyl", tail: "needle", motion: "vinyl", colors: Object.freeze({ ear: "#7A3F4D", highlight: "#D49A8A", rim: "#F2C9B8" }) }),
-			Object.freeze({ id: "aurora", name: "Moony · Aurora", role: "氛围织光者", ear: "aurora", tail: "none", motion: "aurora", colors: Object.freeze({ ear: "#5273A8", highlight: "#9FE6D8", rim: "#D1F7EC" }) }),
-			Object.freeze({ id: "static", name: "Moony · Static", role: "实验噪声者", ear: "static", tail: "none", motion: "static", colors: Object.freeze({ ear: "#5D6372", highlight: "#AEB7C8", rim: "#C9FF76" }) })
+			Object.freeze({ id: "vinyl", name: "Moony · Vinyl", role: "黑胶漫游者", ear: "vinyl", tail: "needle", motion: "vinyl", colors: Object.freeze({ ear: "#7A3F4D", highlight: "#D49A8A", rim: "#F2C9B8" }) })
 		]);
 		var MOONY_BY_ID = Object.freeze(MOONY_CATALOG.reduce(function (out, pet) { out[pet.id] = pet; return out; }, {}));
-		var MOONY_SOFT_GLOW_EARS = Object.freeze({ pulse: true, echo: true, hush: true, aurora: true });
+		var MOONY_SOFT_GLOW_EARS = Object.freeze({ pulse: true, echo: true, hush: true });
 		var MOONY_PHASE_CIRCUMFERENCE = 188.5;
 
 		function getMoony(id) {
@@ -157,6 +154,7 @@ window.__ModuleLoader__.load({
 				className: "dsa-moony-phase" + (buffering ? " buffering" : ""), viewBox: "0 0 64 64",
 				role: "img", "aria-label": "播放进度 " + Math.round(phase.progress * 100) + "%"
 			}, [
+				h("circle", { key: "track", className: "dsa-moony-phase-track", cx: 32, cy: 32, r: 30 }),
 				h("circle", { key: "progress", className: "dsa-moony-phase-progress", cx: 32, cy: 32, r: 30, style: { strokeDasharray: MOONY_PHASE_CIRCUMFERENCE, strokeDashoffset: offset, opacity: phase.opacity } }),
 				h("circle", { key: "gap", className: "dsa-moony-phase-gap", cx: 32, cy: 32, r: 30 })
 			]);
@@ -255,22 +253,8 @@ window.__ModuleLoader__.load({
 		}
 
 		/* ---------- API ---------- */
-		// 页面播放者 token：本页面的唯一身份，交互时上报服务端成为“播放者”（防多页面串音）
-		var PAGE_TOKEN = (function () {
-			try {
-				var k = "dsh-moony-singer:page-token";
-				var t = sessionStorage.getItem(k);
-				if (!t) { t = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); sessionStorage.setItem(k, t); }
-				return t;
-			} catch { return "p" + Date.now().toString(36); }
-		})();
 		function getState() {
-			return fetch("/dsh-alger/state?token=" + encodeURIComponent(PAGE_TOKEN), { cache: "no-store" }).then(function (r) { return r.json(); });
-		}
-		function claimPlayback(force) {
-			// visible=true：只有用户正在看的页面能成为播放者（后台/隐藏页面不抢播放权）
-			var visible = typeof document !== "undefined" ? !document.hidden : true;
-			return post("/dsh-alger/claim", { token: PAGE_TOKEN, force: !!force, visible: visible }).catch(function () { /* 忽略 */ });
+			return fetch("/dsh-alger/state", { cache: "no-store" }).then(function (r) { return r.json(); });
 		}
 		function post(path, body) {
 			return fetch(path, {
@@ -340,7 +324,7 @@ window.__ModuleLoader__.load({
 			".dsa-pet:active{cursor:grabbing}.dsa-moony-rhythm{position:absolute;inset:0;display:block}",
 			".dsa-moony-face{position:absolute;inset:0;z-index:2;display:block;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,.9);background:linear-gradient(145deg,#f5f2f8 4%,#d6cfdf 58%,#aaa1b9);box-shadow:inset 4px 5px 8px rgba(255,255,255,.58),inset -6px -7px 11px rgba(55,40,76,.14),0 8px 18px rgba(0,0,0,.34)}",
 			".dsa-moony-face img{width:100%;height:100%;display:block;object-fit:cover}",
-			".dsa-moony-phase{position:absolute;inset:-1px;z-index:2;width:66px;height:66px;overflow:visible;pointer-events:none;transform:rotate(-90deg)}.dsa-moony-phase circle{fill:none;vector-effect:non-scaling-stroke;transform-origin:32px 32px}.dsa-moony-phase-progress{stroke:var(--moony-light);stroke-width:1.35;stroke-linecap:round;filter:drop-shadow(0 0 2px var(--moony-light)) drop-shadow(0 0 5px var(--moony-light-soft))}.dsa-moony-phase-gap{opacity:0;stroke:var(--moony-light);stroke-width:1.6;stroke-linecap:round;stroke-dasharray:138 50.5;filter:drop-shadow(0 0 4px var(--moony-light-soft))}.dsa-moony-phase.buffering .dsa-moony-phase-progress{opacity:.24!important}.dsa-moony-phase.buffering .dsa-moony-phase-gap{opacity:.9;animation:dsa-moony-phase-flow 1.45s linear infinite}",
+			".dsa-moony-phase{position:absolute;inset:-4px;z-index:2;width:72px;height:72px;overflow:visible;pointer-events:none;transform:rotate(-90deg)}.dsa-moony-phase circle{fill:none;vector-effect:non-scaling-stroke;transform-origin:32px 32px}.dsa-moony-phase-track{stroke:rgba(255,255,255,.2);stroke-width:1.25}.dsa-moony-phase-progress{stroke:color-mix(in srgb,var(--moony-light) 58%,white 42%);stroke-width:2.2;stroke-linecap:round;filter:drop-shadow(0 0 2px rgba(255,255,255,.72)) drop-shadow(0 0 6px var(--moony-light-soft))}.dsa-moony-phase-gap{opacity:0;stroke:color-mix(in srgb,var(--moony-light) 58%,white 42%);stroke-width:2.2;stroke-linecap:round;stroke-dasharray:138 50.5;filter:drop-shadow(0 0 5px var(--moony-light-soft))}.dsa-moony-phase.buffering .dsa-moony-phase-progress{opacity:.24!important}.dsa-moony-phase.buffering .dsa-moony-phase-gap{opacity:.95;animation:dsa-moony-phase-flow 1.45s linear infinite}",
 			".dsa-moony-ear{position:absolute;z-index:3;display:block;background:linear-gradient(145deg,var(--moony-ear-highlight),var(--moony-ear));border:3px solid var(--moony-rim);box-shadow:inset 3px 3px 6px rgba(255,255,255,.2),inset -4px -5px 7px rgba(30,18,60,.18),0 0 9px var(--moony-rim-soft),0 5px 9px rgba(0,0,0,.2);filter:drop-shadow(0 0 5px var(--moony-light-soft));transform-origin:50% 90%;transition:border-color .35s,filter .35s,box-shadow .35s}",
 			".dsa-moony-ear::before{content:'';position:absolute;inset:6px;border:1px solid var(--moony-light-soft);border-radius:inherit;background:radial-gradient(circle at 35% 28%,var(--moony-light-soft),transparent 72%);box-shadow:inset 0 0 8px var(--moony-light-soft);transition:background .5s,border-color .5s,box-shadow .5s}",
 			".dsa-moony-soft-halos{position:absolute;inset:0;z-index:2;display:block;pointer-events:none}.dsa-moony-soft-halo{position:absolute;display:block;border-radius:50%;background:var(--moony-light-soft);filter:blur(7px);opacity:.82;transform-origin:50% 90%;transition:background .5s}",
@@ -354,11 +338,8 @@ window.__ModuleLoader__.load({
 			".dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-ear{top:-28px;width:37px;height:32px;border-radius:70% 30% 62% 38%;clip-path:polygon(0 10%,100% 0,78% 100%,18% 85%)}.dsa-moony-pet[data-moony-ear='hush'] .left{left:-9px;transform:rotate(-22deg)}.dsa-moony-pet[data-moony-ear='hush'] .right{right:-9px;transform:scaleX(-1) rotate(-22deg)}",
 			".dsa-moony-pet[data-moony-ear='loop'] .dsa-moony-ear{top:-23px;width:33px;height:38px;border:5px solid var(--moony-rim);border-radius:50%;background:transparent;box-shadow:inset 0 0 8px var(--moony-light-soft),0 0 9px var(--moony-rim-soft)}.dsa-moony-pet[data-moony-ear='loop'] .dsa-moony-ear::before{inset:5px;background:transparent}.dsa-moony-pet[data-moony-ear='loop'] .left{left:-4px;transform:rotate(-18deg)}.dsa-moony-pet[data-moony-ear='loop'] .right{right:-4px;transform:rotate(18deg)}",
 			".dsa-moony-pet[data-moony-ear='bass'] .dsa-moony-ear{top:-10px;width:31px;height:24px;border-radius:58% 42% 34% 28%}.dsa-moony-pet[data-moony-ear='bass'] .left{left:-2px;transform:rotate(-10deg)}.dsa-moony-pet[data-moony-ear='bass'] .right{right:-2px;transform:rotate(10deg)}",
-			".dsa-moony-pet[data-moony-ear='solo'] .left{left:4px;top:-35px;width:21px;height:54px;border-radius:64% 36% 24% 30%;transform:rotate(-8deg)}.dsa-moony-pet[data-moony-ear='solo'] .right{right:-3px;top:-13px;width:34px;height:27px;border-radius:68% 32% 55% 35%;transform:rotate(13deg)}",
 			".dsa-moony-pet[data-moony-ear='vinyl'] .dsa-moony-ear{top:-15px;width:29px;height:29px;border-radius:50%;box-shadow:inset 0 0 0 5px rgba(34,20,26,.18),inset 0 0 0 7px var(--moony-light-soft),0 0 9px var(--moony-rim-soft)}.dsa-moony-pet[data-moony-ear='vinyl'] .left{left:-3px}.dsa-moony-pet[data-moony-ear='vinyl'] .right{right:-3px}",
-			".dsa-moony-pet[data-moony-ear='aurora'] .dsa-moony-ear{top:-35px;width:40px;height:55px;border-radius:70% 30% 62% 38%;clip-path:polygon(4% 2%,72% 0,100% 32%,73% 61%,91% 100%,40% 79%,10% 100%,22% 50%);background:linear-gradient(160deg,var(--moony-ear-highlight),var(--moony-ear) 55%,#A47DCA)}.dsa-moony-pet[data-moony-ear='aurora'] .left{left:-13px;transform:rotate(-14deg)}.dsa-moony-pet[data-moony-ear='aurora'] .right{right:-13px;transform:scaleX(-1) rotate(-14deg)}",
-			".dsa-moony-pet[data-moony-ear='static'] .dsa-moony-ear{top:-25px;width:29px;height:43px;border-radius:24% 48% 28% 42%;clip-path:polygon(12% 0,100% 7%,76% 39%,100% 55%,62% 100%,21% 78%,0 35%)}.dsa-moony-pet[data-moony-ear='static'] .left{left:0;transform:rotate(-12deg)}.dsa-moony-pet[data-moony-ear='static'] .right{right:0;transform:scaleX(-1) rotate(-12deg)}",
-			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-soft-halo{top:-25px;width:27px;height:45px}.dsa-moony-pet[data-moony-ear='echo'] .dsa-moony-soft-halo{top:-16px;width:39px;height:31px}.dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-soft-halo{top:-26px;width:37px;height:30px}.dsa-moony-pet[data-moony-ear='aurora'] .dsa-moony-soft-halo{top:-31px;width:40px;height:51px}",
+			".dsa-moony-pet[data-moony-ear='pulse'] .dsa-moony-soft-halo{top:-25px;width:27px;height:45px}.dsa-moony-pet[data-moony-ear='echo'] .dsa-moony-soft-halo{top:-16px;width:39px;height:31px}.dsa-moony-pet[data-moony-ear='hush'] .dsa-moony-soft-halo{top:-26px;width:37px;height:30px}",
 			".dsa-moony-tail{position:absolute;z-index:1;pointer-events:none;filter:drop-shadow(0 0 6px var(--moony-light-soft));transition:filter .5s}.dsa-moony-tail[data-moony-tail='orbit']{right:-8px;bottom:-5px;width:38px;height:32px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(25deg)}",
 			".dsa-moony-tail[data-moony-tail='comet']{right:-17px;bottom:5px;width:42px;height:17px;border-radius:70% 30% 70% 30%;background:linear-gradient(90deg,var(--moony-ear-highlight),var(--moony-ear));transform:rotate(24deg)}",
 			".dsa-moony-tail[data-moony-tail='curl']{right:-7px;bottom:-6px;width:31px;height:31px;border:6px solid var(--moony-ear);border-left-color:transparent;border-radius:50%;transform:rotate(12deg)}",
@@ -666,16 +647,6 @@ window.__ModuleLoader__.load({
 				getState().then(function (s) { setState(s); }).catch(function () { /* 忽略瞬时失败 */ });
 			}, []);
 
-			// 挂载时声明播放者身份：可见页面加载即抢占（用户刷新/打开页面后自动拿回播放权）；
-			// 不可见页面（后台预览）不抢。
-			React.useEffect(function () {
-				if (typeof document === "undefined" || !document.hidden) {
-					claimPlayback(true);
-				} else {
-					claimPlayback(false);
-				}
-			}, []);
-
 			// 轮询
 			React.useEffect(function () {
 				refresh();
@@ -741,9 +712,6 @@ window.__ModuleLoader__.load({
 				if (!audio) return;
 				var st = state || {};
 				var url = st.currentUrl || null;
-				// 播放权：只有当前页面是“播放者”（用户交互过、服务端确认）才出声，
-				// 其他页面（如后台打开的 Codex 浏览器）保持静音，避免多页面串音
-				var isOwner = Boolean(st.isAudioOwner);
 				// 无当前曲（清空播放列表等）：停止并释放
 				if (!url) {
 					if (lastUrlRef.current) lastUrlRef.current = null;
@@ -755,19 +723,17 @@ window.__ModuleLoader__.load({
 					lastUrlRef.current = url;
 					audio.src = url;
 					audio.volume = typeof st.volume === "number" ? st.volume : 0.8;
-					if (isOwner) {
-						var p = audio.play();
-						if (p && typeof p.catch === "function") p.catch(function () { /* 浏览器阻止自动播放时静默 */ });
-					}
+					var p = audio.play();
+					if (p && typeof p.catch === "function") p.catch(function () { /* 浏览器阻止自动播放时静默 */ });
 				} else if (typeof st.volume === "number" && Math.abs(audio.volume - st.volume) > 0.01) {
 					audio.volume = st.volume;
 				}
-				// 播放/暂停同步（服务端控制 → 浏览器执行；仅播放者页出声）
+				// 播放/暂停同步（服务端控制 → 浏览器执行）
 				var stPlaying = Boolean(st.playing && st.playing.isPlaying);
-				if (isOwner && stPlaying && audio.paused && audio.src) {
+				if (stPlaying && audio.paused && audio.src) {
 					var pp = audio.play();
 					if (pp && typeof pp.catch === "function") pp.catch(function () {});
-				} else if ((!isOwner || !stPlaying) && !audio.paused && audio.src) {
+				} else if (!stPlaying && !audio.paused && audio.src) {
 					audio.pause();
 				}
 			}, [state]);
@@ -1111,7 +1077,7 @@ window.__ModuleLoader__.load({
 				return h("div", {
 					className: "dsa-pet-wrap",
 					style: { left: petX, top: pos ? pos.y : window.innerHeight - 180 },
-					onPointerDownCapture: function () { claimPlayback(true); }
+					
 				}, [
 					h("div", {
 						ref: bubbleRef,
@@ -1152,7 +1118,7 @@ window.__ModuleLoader__.load({
 			return h("div", {
 				ref: cardRef,
 				style: { position: "fixed", left: pos ? pos.x : window.innerWidth - WIDTH - 18, top: pos ? pos.y : window.innerHeight - 300, zIndex: 2147483000 },
-				onPointerDownCapture: function () { claimPlayback(true); }
+				
 			}, [
 				h("div", { className: "dsa-card" }, [
 					// 头部（拖动手柄）：封面 + 标题 + 右侧[已连接][切换形态]

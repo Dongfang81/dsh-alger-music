@@ -213,15 +213,12 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 
 	return {
 		/** alger_status */
-		async status(args) {
+		async status() {
 			const musicApiUp = await apiUp();
 			const snap = player.snapshot();
-			const token = args && args.token ? String(args.token) : null;
 			return {
 				ok: true,
 				musicApiUp,
-				// 当前页面是否为“播放者”（只有它出声；多页面防串音）
-				isAudioOwner: player.isOwner(token),
 				playing: snap.playing
 					? { ok: true, isPlaying: snap.isPlaying, song: snap.playing }
 					: null,
@@ -237,18 +234,6 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				agentStatus: shared.getAgentStatus ? shared.getAgentStatus() : 'idle',
 				queue: snap.queue
 			};
-		},
-
-		/** 页面交互上报：声明/抢占播放者身份（多页面防串音） */
-		async claim(args) {
-			const token = args && args.token ? String(args.token) : null;
-			if (!token) throw new Error('缺少 token。');
-			// 不可见页面（后台/隐藏，如 Codex 的预览浏览器）不能成为播放者
-			if (args && args.visible === false) {
-				return { ok: true, isAudioOwner: false };
-			}
-			const owned = player.claimOwner(token, Boolean(args && args.force));
-			return { ok: true, isAudioOwner: owned && player.isOwner(token) };
 		},
 
 		/** alger_say：让宠物开口说一句话（气泡提示约 6 秒） */
@@ -968,25 +953,9 @@ function registerRoutes(webServer, actions) {
 		{
 			kind: 'exact',
 			path: '/dsh-alger/state',
-			handler: async (req, res) => {
+			handler: async (_req, res) => {
 				try {
-					// 支持 GET /state?token=xxx（页面播放者身份）
-					const q = String(req.url || '').split('?')[1] || '';
-					const m = q.match(/(?:^|&)token=([^&]+)/);
-					const token = m ? decodeURIComponent(m[1]) : null;
-					json(res, await actions.status(token ? { token } : {}));
-				} catch (error) {
-					json(res, { ok: false, error: String((error && error.message) || error) });
-				}
-			}
-		},
-		{
-			kind: 'exact',
-			path: '/dsh-alger/claim',
-			handler: async (req, res) => {
-				try {
-					const body = JSON.parse((await readBody(req)) || '{}');
-					json(res, await actions.claim(body));
+					json(res, await actions.status());
 				} catch (error) {
 					json(res, { ok: false, error: String((error && error.message) || error) });
 				}
