@@ -244,60 +244,84 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 			return { ok: true, text };
 		},
 
-		/** alger_recommend：推荐播放（不知道听什么时用） */
+		/** alger_recommend：推荐播放（不知道听什么时用；失败暗中重试，最多 3 次） */
 		async recommend() {
 			const steps = [];
 			const log = (s) => steps.push(String(s));
 			if (!(await apiUp())) {
 				return { ok: false, steps: [...steps, '音乐服务不可用'], guidance: '请先调用 alger_setup action=start 启动音乐服务。' };
 			}
-			// 1) 拉推荐歌单列表，随机挑一个合适的歌单（过滤曲目过少的）
-			let playlists = [];
-			try {
-				const data = await client.getJson(`${client.apiBase}/personalized?limit=30`);
-				playlists = (data?.result || [])
-					.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3)
-					.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
-			} catch {
-				/* 降级到热门歌单 */
-			}
-			if (playlists.length === 0) {
+			const MAX_ATTEMPTS = 3;
+			const failedIds = new Set(); // 踩过坑的歌单不再重复选
+			let lastErr = '';
+			for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+				if (attempt > 1) log(`第 ${attempt} 次尝试…`);
 				try {
-					const data = await client.getJson(`${client.apiBase}/top/playlist?limit=30`);
-					playlists = (data?.playlists || [])
-						.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3)
-						.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
-				} catch {
-					/* 忽略 */
+					// 1) 拉推荐歌单列表，随机挑一个合适的歌单（过滤曲目过少的）
+					let playlists = [];
+					try {
+						const data = await client.getJson(`${client.apiBase}/personalized?limit=30`);
+						playlists = (data?.result || [])
+							.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3 && !failedIds.has(p.id))
+							.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
+					} catch {
+						/* 降级到热门歌单 */
+					}
+					if (playlists.length === 0) {
+						try {
+							const data = await client.getJson(`${client.apiBase}/top/playlist?limit=30`);
+							playlists = (data?.playlists || [])
+								.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3 && !failedIds.has(p.id))
+								.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
+						} catch {
+							/* 忽略 */
+						}
+					}
+					if (playlists.length === 0) {
+						lastErr = '推荐接口无结果';
+						log(lastErr);
+						continue; // 换一批再试
+					}
+					const plMeta = playlists[Math.floor(Math.random() * playlists.length)];
+					log(`随机命中歌单: [${plMeta.id}] ${plMeta.name}（${plMeta.trackCount} 首）`);
+
+					// 2) 取歌单歌曲，整单替换队列播放；任一环节失败 → 记录后换歌单重试
+					const pl = await client.playlist(plMeta.id, 500);
+					const songs = (pl?.tracks || []).filter((s) => s && s.id && s.name);
+					if (songs.length === 0) {
+						lastErr = `歌单「${plMeta.name}」无可播放歌曲`;
+						failedIds.add(plMeta.id);
+						log(lastErr);
+						continue;
+					}
+					log(`歌单「${plMeta.name}」共 ${pl?.trackCount ?? songs.length} 首，取得 ${songs.length} 首，从「${songs[0].name}」开始`);
+					const song = player.replaceAndPlay(songs);
+					const firstHit = await urlFor(song);
+					if (!firstHit || !firstHit.url) {
+						lastErr = `歌单「${plMeta.name}」第一首歌无可用音源`;
+						failedIds.add(plMeta.id);
+						log(lastErr);
+						continue;
+					}
+					player.state.currentUrl = firstHit.url;
+					player.state.playing = true;
+					shared.setNotice('♫ 推荐歌单：' + plMeta.name + '（' + songs.length + ' 首）');
+					return {
+						ok: true,
+						steps,
+						playedName: song ? song.name : '',
+						playlistId: plMeta.id,
+						playlistName: plMeta.name,
+						added: songs.length,
+						queueLength: player.state.queue.length
+					};
+				} catch (err) {
+					lastErr = (err && err.message) ? String(err.message) : String(err);
+					log(lastErr);
+					/* 下一轮重试 */
 				}
 			}
-			if (playlists.length === 0) {
-				return { ok: false, steps: [...steps, '推荐接口无结果'], guidance: '请稍后再试，或直接搜索点歌。' };
-			}
-			const plMeta = playlists[Math.floor(Math.random() * playlists.length)];
-			log(`随机命中歌单: [${plMeta.id}] ${plMeta.name}（${plMeta.trackCount} 首）`);
-
-			// 2) 取歌单歌曲，整单替换队列播放
-			const pl = await client.playlist(plMeta.id, 500);
-			const songs = (pl?.tracks || []).filter((s) => s && s.id && s.name);
-			if (songs.length === 0) {
-				return { ok: false, steps: [...steps, `歌单「${plMeta.name}」无可播放歌曲`], guidance: '请稍后再试。' };
-			}
-			log(`歌单「${plMeta.name}」共 ${pl?.trackCount ?? songs.length} 首，取得 ${songs.length} 首，从「${songs[0].name}」开始`);
-			const song = player.replaceAndPlay(songs);
-			const firstHit = await urlFor(song);
-			player.state.currentUrl = firstHit ? firstHit.url : null;
-			player.state.playing = true;
-			shared.setNotice('♫ 推荐歌单：' + plMeta.name + '（' + songs.length + ' 首）');
-			return {
-				ok: true,
-				steps,
-				playedName: song ? song.name : '',
-				playlistId: plMeta.id,
-				playlistName: plMeta.name,
-				added: songs.length,
-				queueLength: player.state.queue.length
-			};
+			return { ok: false, steps: [...steps, lastErr || '推荐失败'], guidance: '请稍后再试，或直接搜索点歌。' };
 		},
 
 		/** alger_setup：内置音乐服务管理 */

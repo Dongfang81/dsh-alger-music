@@ -844,6 +844,18 @@ window.__ModuleLoader__.load({
 							var cur = readStoredMoonyId(getLocalStorage());
 							if (cur !== target) {
 								setPetId(writeStoredMoonyId(getLocalStorage(), target));
+								// 自动变身时宠物说一句话，让用户明白为什么换了角色
+								var roleLines = {
+									"bass": "这低音，我来扛！",
+									"pulse": "节拍来了，跟上我！",
+									"hush": "嘘…安静听。",
+									"chorus": "一起唱～",
+									"echo": "这首歌，有点回忆的味道。",
+									"drift": "漂在这旋律里吧。",
+									"classic": "经典的味道，正合我意。"
+								};
+								var line = roleLines[target] || ("这首适合我 " + getMoony(target).name + " ！");
+								post("/dsh-alger/say", { text: line }).catch(function () { /* 忽略 */ });
 							}
 							matchedSongRef = song.id; // 风格已定，本歌停止采样
 						}
