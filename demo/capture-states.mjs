@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 月宝 Moony 状态展示图生成：打开真实 GUI 浮窗，对每个 agent 状态强制切换耳朵
+ * 月宝儿 Moony 状态展示图生成：打开真实 GUI 浮窗，对每个 agent 状态强制切换耳朵
  * 样式并截取宠物区域，最后拼成带标注的完整展示图（docs/moony-states.png）。
  */
 import { createRequire } from 'node:module';
@@ -93,7 +93,7 @@ try {
 		.desc{color:rgba(255,255,255,0.65);font:13px system-ui,'PingFang SC',sans-serif}
 		.title{position:absolute;top:8px;left:0;right:0;text-align:center;color:#fff;font:600 22px system-ui,'PingFang SC',sans-serif}
 	</style></head><body>
-		<div class="title">🐰 月宝 Moony · 状态展示（圆脸 + 耳朵）</div>
+		<div class="title">🐰 月宝儿 Moony · 状态展示（圆脸 + 耳朵）</div>
 		${grid.map((t) => `
 			<div class="tile" style="left:${t.x}px;top:${t.y + 34}px">
 				<img src="file://${t.path}">

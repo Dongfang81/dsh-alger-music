@@ -681,7 +681,7 @@ window.__ModuleLoader__.load({
 				style: { padding: "4px 2px 2px", width: "100%" }
 			}, h("button", {
 				type: "button",
-				title: hidden ? "激活月宝音乐宠物" : "关闭月宝音乐宠物",
+				title: hidden ? "激活月宝儿音乐宠物" : "关闭月宝儿音乐宠物",
 				onClick: function () { setPetHidden(!petVis.hidden); },
 				style: {
 					width: "100%",
@@ -825,7 +825,7 @@ window.__ModuleLoader__.load({
 							stableCountRef.current = 0;
 							return;
 						}
-						// 本歌风格已确定：停止采样（一首歌只匹配一次，播放中不频繁换月宝）
+						// 本歌风格已确定：停止采样（一首歌只匹配一次，播放中不频繁换月宝儿）
 						if (matchedSongRef === song.id) return;
 						// 跳过前奏：歌曲开头通常是进场/纯音乐铺垫，特征不代表整首歌。
 						// 从歌曲前 20%（最多 15 秒）之后才开始采样，取中段的真实特征。
@@ -1183,7 +1183,7 @@ window.__ModuleLoader__.load({
 			var albumArtwork = playing && playing.albumPic ? playing.albumPic : null;
 			var dot = readyDot(state);
 			var title = playing ? playing.name : "未在播放";
-			var artist = playing ? (playing.artists || "") : (state && state.musicApiUp ? "月宝 Moony" : "播放器未连接");
+			var artist = playing ? (playing.artists || "") : (state && state.musicApiUp ? "月宝儿 Moony" : "播放器未连接");
 			var canControl = Boolean(state && state.musicApiUp);
 
 			// 唱片环境光：小尺寸采样，跨域、解码或 Canvas 失败均静默回退角色本色。

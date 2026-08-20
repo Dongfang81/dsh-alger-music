@@ -80,14 +80,14 @@ try {
 	log('就绪，开始录制');
 
 	/* ===== 开场 ===== */
-	await overlay('', '🎵 你的 DSH 会唱歌了', '月宝 Moony · 本地音乐播放插件', 'dsh-moony-singer');
+	await overlay('', '🎵 你的 DSH 会唱歌了', '月宝儿 Moony · 本地音乐播放插件', 'dsh-moony-singer');
 	await sleep(3500);
 	await overlayHide();
 	await sleep(1200);
 
 	/* ===== 亮点 1：对话框说“我想听歌”，宠物就给你安排好 ===== */
 	// 1a. 展示宠物 + 对话气泡（overlay 模拟用户对话框）
-	await overlay('', '「我想听歌」', '—— 在对话框里说一句，剩下的交给月宝', '亮点 1 · 对话点歌');
+	await overlay('', '「我想听歌」', '—— 在对话框里说一句，剩下的交给月宝儿', '亮点 1 · 对话点歌');
 	await sleep(3200);
 	await overlayHide();
 	await sleep(800);
