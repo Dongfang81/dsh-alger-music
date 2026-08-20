@@ -763,6 +763,57 @@ function buildActions(cfg, client, shared, player, apiHandle, habits) {
 			const r = await habits.nightCheck();
 			if (r.remind) shared.setNotice('🌙 夜深了，早点休息～月宝儿先退下啦', 8000);
 			return { ok: true, ...r };
+		},
+
+		/** alger_similar：基于当前歌曲找相似歌曲（相似推荐失败回退歌手热门曲） */
+		async similar(args) {
+			const steps = [];
+			const log = (s) => steps.push(String(s));
+			const cur = player.state.queue[player.state.index] || null;
+			const songId = Number(args?.songId) || (cur && cur.id) || null;
+			if (!songId) {
+				return { ok: false, steps: [...steps, '当前没有播放歌曲'], guidance: '请先播放一首歌，或提供 songId。' };
+			}
+			const limit = Math.max(1, Math.min(20, Number(args?.limit) || 8));
+			const curName = cur ? cur.name : '';
+			let songs = [];
+			// 1) 相似歌曲推荐
+			try {
+				const data = await client.getJson(`${client.apiBase}/simi/song?id=${songId}&limit=${limit}`);
+				songs = (data?.songs || []).filter((s) => s && s.id && s.name);
+			} catch {
+				/* 回退歌手热门 */
+			}
+			// 2) 回退：当前歌曲的歌手热门曲（排除当前歌曲）
+			if (songs.length === 0) {
+				const artist = (cur && (cur.ar || cur.artists || [])[0]) || null;
+				if (artist && artist.id) {
+					try {
+						const data = await client.getJson(`${client.apiBase}/artist/top?id=${artist.id}`);
+						songs = (data?.songs || []).filter((s) => s && s.id && s.name && Number(s.id) !== Number(songId));
+					} catch {
+						/* 忽略 */
+					}
+					if (songs.length > 0) log('相似推荐不可用，已回退到「' + (artist.name || '该歌手') + '」的热门曲');
+				}
+			}
+			if (songs.length === 0) {
+				return { ok: false, steps: [...steps, '未找到相似歌曲'], guidance: '换一首歌再试。' };
+			}
+			// 排除队列中已有的，避免重复
+			const existing = new Set(player.state.queue.map((s) => String(s.id)));
+			songs = songs.filter((s) => !existing.has(String(s.id))).slice(0, limit);
+			if (songs.length === 0) {
+				return { ok: false, steps: [...steps, '相似的歌曲都已经在播放列表里了'], guidance: '直接听就好～' };
+			}
+			player.append(songs);
+			const view = songs.map((s) => ({
+				id: s.id,
+				name: s.name,
+				artists: (s.ar || s.artists || []).map((a) => a && a.name).filter(Boolean).join(' / ')
+			}));
+			log(`基于「${curName}」找到 ${songs.length} 首相似歌曲，已加入播放列表（不打断当前播放）`);
+			return { ok: true, steps, baseSong: curName, added: songs.length, songs: view };
 		}
 	};
 }
@@ -1077,7 +1128,32 @@ function buildTools(cfg, actions) {
 		timeoutMs: cfg.timeoutMs
 	};
 
-	return [status, setup, search, song, playlist, play, queue, control, say, recommend, habitsTool];
+	const similar = {
+		name: 'alger_similar',
+		description:
+			'找与当前播放歌曲相似的歌曲（网易云相似推荐，失败自动回退歌手热门曲），默认直接加入播放列表末尾继续播放，不打断当前歌曲。用于「来点类似的」「多来几首这种的」等口味延伸。',
+		parameters: compileParameters({
+			songId: { type: 'integer', description: '指定歌曲 id（默认当前播放的歌曲）。' },
+			limit: { type: 'integer', description: '返回数量（1-20，默认 8）。' }
+		}),
+		output: {
+			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+			render: (_args, value) => {
+				const rec = asRecord(value);
+				const lines = (rec.steps || []).map((s) => '· ' + s);
+				if (rec.songs && rec.songs.length) {
+					lines.push('相似歌曲：');
+					rec.songs.slice(0, 10).forEach((s, i) => lines.push(`  ${i + 1}. ${s.name}${s.artists ? ' - ' + s.artists : ''}`));
+				}
+				if (rec.guidance) lines.push('提示: ' + rec.guidance);
+				return textBlock(lines);
+			}
+		},
+		execute: (rawArgs) => actions.similar(asRecord(rawArgs)),
+		timeoutMs: Math.max(cfg.timeoutMs, 30000)
+	};
+
+	return [status, setup, search, song, playlist, play, queue, control, say, recommend, habitsTool, similar];
 }
 
 /** 读取 POST body（JSON 文本）。 */
@@ -1149,6 +1225,18 @@ function registerRoutes(webServer, actions) {
 					if (action === 'song') json(res, await actions.songCheck(body));
 					else if (action === 'night') json(res, await actions.nightCheck());
 					else json(res, await actions.habits(body));
+				} catch (error) {
+					json(res, { ok: false, error: String((error && error.message) || error) });
+				}
+			}
+		},
+		{
+			kind: 'exact',
+			path: '/dsh-alger/similar',
+			handler: async (req, res) => {
+				try {
+					const body = JSON.parse((await readBody(req)) || '{}');
+					json(res, await actions.similar(body));
 				} catch (error) {
 					json(res, { ok: false, error: String((error && error.message) || error) });
 				}
