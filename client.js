@@ -367,20 +367,35 @@ window.__ModuleLoader__.load({
 		}
 		/**
 		 * 创建挂在 audio 元素上的音频分析器。
+		 * 注意：createMediaElementSource 会把 audio 输出重路由到 Web Audio 图，
+		 * 而 AudioContext 默认 suspended（自动播放策略）——必须 resume 并保持连接，
+		 * 否则会「显示播放中但无声」。因此这里主动 resume，并在用户交互时再次恢复。
 		 * @returns {function|null} 采样函数（返回 {bass,energy,vocal} 或 null）
 		 */
 		function attachAudioAnalyzer(audio) {
 			try {
 				if (typeof window === "undefined" || !window.AudioContext || !audio) return null;
 				var ctx = new (window.AudioContext || window.webkitAudioContext)();
+				var resumeCtx = function () {
+					if (ctx && ctx.state === "suspended") {
+						var p = ctx.resume();
+						if (p && typeof p.catch === "function") p.catch(function () { /* 浏览器拦截时忽略 */ });
+					}
+				};
+				resumeCtx();
+				document.addEventListener("pointerdown", resumeCtx, true); // 用户交互恢复音频上下文
 				var src = ctx.createMediaElementSource(audio);
 				var analyser = ctx.createAnalyser();
 				analyser.fftSize = 256;
 				src.connect(analyser);
-				analyser.connect(ctx.destination); // 保持音频输出
+				analyser.connect(ctx.destination); // 保持音频输出（重路由后必须连回 destination）
 				var buf = new Uint8Array(analyser.frequencyBinCount);
-				return function sample() {
+				sample.ctx = ctx;
+				sample.resume = resumeCtx;
+				return sample;
+				function sample() {
 					if (audio.paused || audio.ended || audio.readyState < 2) return null;
+					if (ctx.state === "suspended") resumeCtx();
 					analyser.getByteFrequencyData(buf);
 					var n = buf.length;
 					var bassSum = 0, midSum = 0, total = 0;
@@ -787,10 +802,14 @@ window.__ModuleLoader__.load({
 					reportPlayback({ playing: false, position: 0, duration: audio.duration || 0, ready: true });
 				});
 				var unbindBuffering = bindAudioBuffering(audio, setBuffering);
-				// 音频分析器（听歌自动匹配宠物用）：MediaElementSource 会把 audio 输出
-				// 重路由到 Web Audio 图，必须 connect 回 destination 保持出声。
-				var sampleAudio = attachAudioAnalyzer(audio);
+				// 音频分析器（听歌自动匹配宠物用）：仅在自动匹配开启时挂载——
+				// MediaElementSource 会把 audio 输出重路由到 Web Audio 图，
+				// 关闭时保持原生直连扬声器，杜绝任何静音风险。
+				var sampleAudio = null;
 				var analyzerTimer = null;
+				if (readAutoMatch(getLocalStorage())) {
+					sampleAudio = attachAudioAnalyzer(audio);
+				}
 				if (sampleAudio) {
 					var currentSongRef = null; // 当前分析中的歌曲（切歌时重置）
 					analyzerTimer = setInterval(function () {
