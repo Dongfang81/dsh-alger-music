@@ -27,6 +27,18 @@ window.__ModuleLoader__.load({
 		var STORE_X = "dsh-alger:x";
 		var STORE_Y = "dsh-alger:y";
 		var STORE_MOONY_ID = "dsh-moony-singer:pet-id:v1";
+		var STORE_PET_SCALE = "dsh-moony-singer:pet-scale:v1";
+		var PET_SCALE_MIN = 0.6;
+		var PET_SCALE_MAX = 1.8;
+		var PET_SCALE_STEP = 0.1;
+		/** 读宠物缩放（localStorage，非法值回退 1）。 */
+		function readPetScale(storage) {
+			try {
+				var v = Number(storage && storage.getItem(STORE_PET_SCALE));
+				if (Number.isFinite(v) && v >= PET_SCALE_MIN && v <= PET_SCALE_MAX) return v;
+			} catch { /* 回退默认 */ }
+			return 1;
+		}
 		var MOONY_STATUS = Object.freeze({
 			idle: Object.freeze({ signal: "transparent" }),
 			running: Object.freeze({ signal: "#3B82F6" }),
@@ -474,6 +486,7 @@ window.__ModuleLoader__.load({
 			".dsa-addall:disabled{opacity:0.5;cursor:not-allowed}",
 			/* ---- 宠物（收起态）：宠物固定，气泡锚定在左/右侧（自动换边） ---- */
 			".dsa-pet-wrap{position:fixed;z-index:2147483000;width:64px;height:64px;user-select:none}",
+			".dsa-pet-scale{position:absolute;left:0;top:0;width:64px;height:64px;will-change:transform;transition:transform .12s ease-out}",
 			".dsa-pet-bubble-pos{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center}",
 			".dsa-pet-bubble-pos.right{left:74px}",
 			".dsa-pet-bubble-pos.left{right:74px}",
@@ -603,6 +616,16 @@ window.__ModuleLoader__.load({
 			stateRef.current = state;
 			var [petId, setPetId] = React.useState(function () { return readStoredMoonyId(getLocalStorage()); });
 			var selectMoony = function (id) { setPetId(writeStoredMoonyId(getLocalStorage(), id)); };
+			// 宠物缩放（滚轮在宠物上调整；容器缩放不破坏内部动画）
+			var [petScale, setPetScale] = React.useState(function () { return readPetScale(getLocalStorage()); });
+			var onPetWheel = function (e) {
+				e.preventDefault();
+				e.stopPropagation();
+				var next = Math.round((petScale + (e.deltaY < 0 ? PET_SCALE_STEP : -PET_SCALE_STEP)) * 10) / 10;
+				next = Math.max(PET_SCALE_MIN, Math.min(PET_SCALE_MAX, next));
+				setPetScale(next);
+				try { if (getLocalStorage()) getLocalStorage().setItem(STORE_PET_SCALE, String(next)); } catch { /* ignore */ }
+			};
 			// 默认宠物形态（收起）：每次打开先看到宠物，点击才切换播放器
 			var [collapsed, setCollapsed] = React.useState(true);
 			var [shapeMenuOpen, setShapeMenuOpen] = React.useState(false);
@@ -1045,7 +1068,7 @@ window.__ModuleLoader__.load({
 					var el = bubbleRef.current;
 					if (!el) return;
 					var GAP = 12;
-					var petW = 64;
+					var petW = Math.round(64 * petScale); // 缩放后的实际视觉宽度
 					var MARGIN = 8;
 					var MIN_RIGHT = 160; // 右侧可用空间低于此阈值就固定放左侧
 					var spaceRight = window.innerWidth - (petX + petW + GAP) - MARGIN;
@@ -1064,7 +1087,7 @@ window.__ModuleLoader__.load({
 				measure();
 				window.addEventListener("resize", measure);
 				return function () { window.removeEventListener("resize", measure); };
-			}, [bubbleText, bubbleMaxW, collapsed, pos]);
+			}, [bubbleText, bubbleMaxW, collapsed, pos, petScale]);
 
 			// 已关闭：浮动区域完全不渲染，仅保留侧边栏底部开关作为恢复入口。
 			if (hidden) return null;
@@ -1072,14 +1095,18 @@ window.__ModuleLoader__.load({
 			// 折叠态：会唱歌的宠物（作者形象 + 歌词气泡）
 			if (collapsed) {
 				var petImg = artistInfo && artistInfo.avatar ? artistInfo.avatar : (playing ? playing.albumPic : null);
+				// 气泡锚点随缩放补偿（气泡本身不缩放，锚定在缩放后的宠物边缘）
+				var bubbleOffset = Math.round(74 * petScale);
 				return h("div", {
 					className: "dsa-pet-wrap",
 					style: { left: petX, top: pos ? pos.y : window.innerHeight - 180 },
-					
+					onWheel: onPetWheel,
+					title: "滚轮缩放宠物（" + Math.round(petScale * 100) + "%）"
 				}, [
 					h("div", {
 						ref: bubbleRef,
-						className: "dsa-pet-bubble-pos " + bubbleSide
+						className: "dsa-pet-bubble-pos " + bubbleSide,
+						style: bubbleSide === "left" ? { right: bubbleOffset } : { left: bubbleOffset }
 					}, [
 						h("div", {
 							className: "dsa-pet-bubble" +
@@ -1100,16 +1127,22 @@ window.__ModuleLoader__.load({
 					isPlaying
 						? h("div", { className: "dsa-pet-notes" }, [h("span", null, "♪"), h("span", null, "♫"), h("span", null, "♪")])
 						: null,
-					h(MoonyPet, {
-					petId: petId, agentStatus: state && state.agentStatus, mediaUrl: petImg, isPlaying: isPlaying, ambientColor: ambientColor,
-					playbackProgress: prog.dur > 0 ? prog.pos / prog.dur : 0, isBuffering: Boolean(playing && buffering),
-						title: getMoony(petId).name + " · 展开播放器", onPointerDown: onDragStart,
-						onClick: function (event) {
-							event.stopPropagation();
-							if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-							toggleCollapsed();
-						}
-					})
+					// 缩放容器：transform scale 只作用于此层，内部 MoonyPet 动画在自己的坐标系照常播放
+					h("div", {
+						className: "dsa-pet-scale",
+						style: { transform: "scale(" + petScale + ")", transformOrigin: "50% 100%" }
+					}, [
+						h(MoonyPet, {
+						petId: petId, agentStatus: state && state.agentStatus, mediaUrl: petImg, isPlaying: isPlaying, ambientColor: ambientColor,
+						playbackProgress: prog.dur > 0 ? prog.pos / prog.dur : 0, isBuffering: Boolean(playing && buffering),
+							title: getMoony(petId).name + " · 展开播放器", onPointerDown: onDragStart,
+							onClick: function (event) {
+								event.stopPropagation();
+								if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+								toggleCollapsed();
+							}
+						})
+					])
 				]);
 			}
 
