@@ -7,7 +7,7 @@ function toChildren(children) {
 	return children.length === 0 ? undefined : children.length === 1 ? children[0] : children;
 }
 
-function loadClient({ imagePixels = null, imageFails = false } = {}) {
+function loadClient({ imagePixels = null, imageFails = false, mediaSession = null } = {}) {
 	let definition;
 	const react = {
 		createElement(type, props, ...children) {
@@ -42,6 +42,11 @@ function loadClient({ imagePixels = null, imageFails = false } = {}) {
 		setInterval() { return 1; }, setTimeout() { return 1; },
 		window: { __ModuleLoader__: { load(value) { definition = value; } }, addEventListener() {}, removeEventListener() {}, innerHeight: 900, innerWidth: 1440 }
 	};
+	class MediaMetadata {
+		constructor(props) { Object.assign(this, props); }
+	}
+	sandbox.MediaMetadata = MediaMetadata;
+	if (mediaSession) sandbox.navigator = { mediaSession };
 	vm.runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox);
 	return definition.factory((name) => {
 		if (name === 'react') return react;
@@ -505,6 +510,34 @@ test('expanded player toggles the lightweight lyrics panel and shows an empty hi
 
 	lyricButtons()[0].props.onClick();
 	assert.equal(findNodes(harness.tree(), (node) => node.props?.className === 'dsa-lyrics').length, 0, 'clicking again closes the panel');
+});
+
+test('syncMediaSession publishes song metadata and playback state to the system', () => {
+	let metadata = null;
+	let playbackState = 'none';
+	const mediaSession = {
+		set metadata(value) { metadata = value; },
+		set playbackState(value) { playbackState = value; }
+	};
+	const { syncMediaSession } = loadClient({ mediaSession });
+	const song = { id: 7, name: 'Moon', artists: 'Luna', album: 'Night', albumPic: 'https://img.test/moon.jpg' };
+
+	syncMediaSession(song, true);
+	assert.equal(metadata.title, 'Moon');
+	assert.equal(metadata.artist, 'Luna');
+	assert.equal(metadata.album, 'Night');
+	assert.equal(metadata.artwork.length, 1);
+	assert.equal(metadata.artwork[0].src, 'https://img.test/moon.jpg');
+	assert.equal(metadata.artwork[0].sizes, '512x512');
+	assert.equal(playbackState, 'playing');
+
+	syncMediaSession(song, false);
+	assert.equal(metadata.title, 'Moon', 'the same song must not rebuild metadata');
+	assert.equal(playbackState, 'paused', 'but the playback state still updates');
+
+	syncMediaSession(null, false);
+	assert.equal(metadata, null, 'stopping clears the system metadata');
+	assert.equal(playbackState, 'paused');
 });
 
 test('picker exposes ten static preview options and selects the clicked character', () => {

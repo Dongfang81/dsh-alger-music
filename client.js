@@ -338,6 +338,34 @@ window.__ModuleLoader__.load({
 			return cur;
 		}
 
+		/* ---------- 系统媒体控制（Media Session API） ----------
+		 * macOS 控制中心 / 耳机与键盘媒体键直接控制月宝儿：播放中的 <audio>
+		 * 会自动成为系统媒体会话的播放源，这里补充歌名/歌手/封面元数据并同步
+		 * 播放状态。浏览器不支持或异常时全部静默降级（不抛错、不影响播放）。
+		 */
+		var _msSongId = null; // 已发布元数据的歌曲 id（歌变了才重建 metadata）
+		function syncMediaSession(song, isPlaying) {
+			try {
+				if (typeof navigator === "undefined" || !navigator.mediaSession) return;
+				var ms = navigator.mediaSession;
+				var s = song || null;
+				var sid = s && s.id ? String(s.id) : "";
+				if (sid && sid !== _msSongId) {
+					_msSongId = sid;
+					var artwork = s.albumPic ? [{ src: s.albumPic, sizes: "512x512" }] : [];
+					try {
+						ms.metadata = new MediaMetadata({ title: s.name || "", artist: s.artists || "", album: s.album || "", artwork: artwork });
+					} catch {
+						try { ms.metadata = new MediaMetadata({ title: s.name || "", artist: s.artists || "" }); } catch { ms.metadata = null; }
+					}
+				} else if (!sid && _msSongId) {
+					_msSongId = null;
+					ms.metadata = null;
+				}
+				ms.playbackState = isPlaying ? "playing" : "paused";
+			} catch { /* 忽略 */ }
+		}
+
 		/* ---------- 听歌自动匹配宠物（Web Audio 分析低频/能量 → 角色映射） ---------- */
 		var STORE_AUTO_MATCH = "dsh-moony-singer:auto-match:v1";
 		function readAutoMatch(storage) {
@@ -879,6 +907,30 @@ window.__ModuleLoader__.load({
 				};
 			}, []);
 
+			// 系统媒体控制：注册媒体键响应（控制中心/耳机/键盘；一次性注册，全部静默降级）
+			React.useEffect(function () {
+				if (typeof navigator === "undefined" || !navigator.mediaSession) return;
+				var ms = navigator.mediaSession;
+				var mediaCommand = function (action) { command(action).catch(function () { /* 忽略 */ }); };
+				var handlers = {
+					play: function () { mediaCommand("play"); },
+					pause: function () { mediaCommand("pause"); },
+					previoustrack: function () { mediaCommand("prev"); },
+					nexttrack: function () { mediaCommand("next"); },
+					seekto: function (d) {
+						if (seekToRef.current) seekToRef.current(d && typeof d.seekTime === "number" ? d.seekTime : 0);
+					}
+				};
+				Object.keys(handlers).forEach(function (name) {
+					try { ms.setActionHandler(name, handlers[name]); } catch { /* 不支持的动作忽略 */ }
+				});
+				return function () {
+					Object.keys(handlers).forEach(function (name) {
+						try { ms.setActionHandler(name, null); } catch { /* ignore */ }
+					});
+				};
+			}, []);
+
 			// 自动匹配状态引用（供 audio 定时器读取最新值，避免闭包过期）
 			var autoMatchRef = React.useRef(autoMatch);
 			autoMatchRef.current = autoMatch;
@@ -887,7 +939,8 @@ window.__ModuleLoader__.load({
 			var stableCountRef = React.useRef(0);
 
 			var seekEndTimerRef = React.useRef(null);
-			// 跳转到指定秒数（进度条拖动 / 歌词行点击共用；直接用 audio.currentTime，随后由 timeupdate 接管）
+			var seekToRef = React.useRef(null); // 系统媒体键 seek 回调（避免闭包过期）
+			// 跳转到指定秒数（进度条拖动 / 歌词行点击 / 媒体键共用；直接用 audio.currentTime，随后由 timeupdate 接管）
 			var seekTo = function (v) {
 				var audio = audioRef.current;
 				if (!audio || typeof v !== "number" || !Number.isFinite(v)) return;
@@ -897,6 +950,7 @@ window.__ModuleLoader__.load({
 				clearTimeout(seekEndTimerRef.current);
 				seekEndTimerRef.current = setTimeout(function () { seekingRef.current = false; }, 600);
 			};
+			seekToRef.current = seekTo;
 			// 进度条：拖动 seek
 			var onSeek = function (e) {
 				seekTo(Number(e.target.value));
@@ -932,6 +986,8 @@ window.__ModuleLoader__.load({
 				} else if (!stPlaying && !audio.paused && audio.src) {
 					audio.pause();
 				}
+				// 系统媒体控制：同步元数据与播放状态
+				syncMediaSession(st.playing ? st.playing.song : null, stPlaying);
 			}, [state]);
 
 			// 进度上报（2s 一次，供服务端状态/模型读取）
@@ -1630,6 +1686,7 @@ window.__ModuleLoader__.load({
 		exports.inject = inject;
 		exports.name = "dsh-moony-singer";
 		exports.parseLrc = parseLrc;
+		exports.syncMediaSession = syncMediaSession;
 		exports.MOONY_CSS = MOONY_CSS;
 		exports.MOONY_CATALOG = MOONY_CATALOG;
 		exports.MOONY_STATUS = MOONY_STATUS;
