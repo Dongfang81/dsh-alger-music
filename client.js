@@ -218,18 +218,6 @@ window.__ModuleLoader__.load({
 			var autoMatch = Boolean(props && props.autoMatch);
 			var onToggleAuto = props && typeof props.onToggleAutoMatch === "function" ? props.onToggleAutoMatch : function () {};
 			return h("div", { className: "dsa-moony-menu", role: "menu", "aria-label": "选择 Moony" }, [
-				MOONY_CATALOG.map(function (pet) {
-					var selected = pet.id === selectedId;
-					return h("button", {
-						key: pet.id, type: "button", role: "menuitemradio", className: "dsa-moony-option" + (selected ? " on" : ""),
-						"data-moony-choice": pet.id, "aria-checked": selected, title: pet.name + " · " + pet.role,
-						onClick: function () { onSelect(pet.id); }
-					}, [
-						MoonyThumbnail({ petId: pet.id }),
-						h("span", { className: "dsa-moony-option-copy" }, [h("strong", null, pet.name), h("small", null, pet.role)]),
-						h("span", { className: "dsa-moony-option-check" }, selected ? "✓" : "")
-					]);
-				}),
 				// 自动匹配宠物开关（听歌时按音频特征自动换角色）；仅在有回调时渲染
 				typeof props && props && typeof props.onToggleAutoMatch === "function"
 					? h("button", {
@@ -241,7 +229,19 @@ window.__ModuleLoader__.load({
 							h("span", { className: "dsa-moony-auto-copy" }, "听歌自动匹配宠物"),
 							h("span", { className: "dsa-moony-auto-check" }, autoMatch ? "✓ 开" : "关")
 						])
-					: null
+					: null,
+				MOONY_CATALOG.map(function (pet) {
+					var selected = pet.id === selectedId;
+					return h("button", {
+						key: pet.id, type: "button", role: "menuitemradio", className: "dsa-moony-option" + (selected ? " on" : ""),
+						"data-moony-choice": pet.id, "aria-checked": selected, title: pet.name + " · " + pet.role,
+						onClick: function () { onSelect(pet.id); }
+					}, [
+						MoonyThumbnail({ petId: pet.id }),
+						h("span", { className: "dsa-moony-option-copy" }, [h("strong", null, pet.name), h("small", null, pet.role)]),
+						h("span", { className: "dsa-moony-option-check" }, selected ? "✓" : "")
+					]);
+				})
 			]);
 		}
 
