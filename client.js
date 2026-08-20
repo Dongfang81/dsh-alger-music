@@ -406,6 +406,7 @@ window.__ModuleLoader__.load({
 			".dsa-btn-primary{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,rgba(255,255,255,0.95),rgba(255,255,255,0.72));color:#11131f;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,0.35)}",
 			".dsa-btn-primary:hover{filter:brightness(1.05)}",
 			".dsa-mode{font-size:10px;min-width:32px;padding:0 3px;color:rgba(255,255,255,0.85)}",
+			".dsa-mode.has-fav{color:#fca5a5}",
 			".dsa-mode-icon{width:24px;height:24px;color:rgba(255,255,255,0.8)}",
 			".dsa-shape-wrap{position:relative;display:flex;align-items:stretch;border-radius:9px;background:linear-gradient(135deg,#fbbf24,#f97316);box-shadow:0 0 10px rgba(251,146,60,0.55),0 2px 8px rgba(0,0,0,0.3);transition:filter .15s,box-shadow .15s}.dsa-shape-wrap:hover{filter:brightness(1.08);box-shadow:0 0 16px rgba(251,146,60,0.8),0 2px 10px rgba(0,0,0,0.35)}",
 			".dsa-shape{font-size:11px;font-weight:700;width:auto;min-width:42px;padding:0 7px;border-radius:9px 0 0 9px;color:#1c1200}.dsa-shape-arrow{width:22px;border-left:1px solid rgba(89,48,0,.25);border-radius:0 9px 9px 0;color:#1c1200;font-size:10px}.dsa-shape:hover,.dsa-shape-arrow:hover{background:rgba(255,255,255,.2)}",
@@ -885,6 +886,21 @@ window.__ModuleLoader__.load({
 				}).catch(function () { setBusy(false); flash("err", "推荐失败"); });
 			};
 
+			// 播放收藏列表：整单替换队列播放，并展开播放列表展示
+			var onPlayFavorites = function () {
+				if (!state || !state.musicApiUp) { flash("err", "音乐服务未就绪，请先点“连接”"); return; }
+				setBusy(true);
+				queueApi({ action: "favorites" }).then(function (r) {
+					setBusy(false);
+					if (r && r.ok) {
+						setQueueOpen(true); // 自动展开播放列表展示收藏
+						setTimeout(refresh, 600);
+					} else {
+						flash("err", (r && r.guidance) || (r && r.error) || "播放收藏失败");
+					}
+				}).catch(function () { setBusy(false); flash("err", "播放收藏失败"); });
+			};
+
 			var onSearch = function (forcedType) {
 				var q = query.trim();
 				if (!q) return;
@@ -1194,6 +1210,12 @@ window.__ModuleLoader__.load({
 					h("div", { className: "dsa-body" }, [
 						// 传输控制（含收藏）
 						h("div", { className: "dsa-controls" }, [
+							h("button", {
+								className: "dsa-btn dsa-mode" + (state && state.favoriteCount > 0 ? " has-fav" : ""),
+								title: "播放收藏的音乐（" + (state && state.favoriteCount ? state.favoriteCount + " 首" : "暂无收藏") + "）",
+								disabled: !canControl || busy,
+								onClick: onPlayFavorites
+							}, "收藏"),
 							h("button", { className: "dsa-btn dsa-mode", title: "推荐播放（不知道听什么时用）", disabled: !canControl || busy, onClick: onRecommend }, "推荐"),
 														h("button", { className: "dsa-btn", title: "上一首", disabled: !canControl, onClick: function () { runCommand("prev"); } }, ICONS.prev),
 							h("button", {
