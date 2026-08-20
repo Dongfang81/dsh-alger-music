@@ -827,6 +827,11 @@ window.__ModuleLoader__.load({
 						}
 						// 本歌风格已确定：停止采样（一首歌只匹配一次，播放中不频繁换月宝）
 						if (matchedSongRef === song.id) return;
+						// 跳过前奏：歌曲开头通常是进场/纯音乐铺垫，特征不代表整首歌。
+						// 从歌曲前 20%（最多 15 秒）之后才开始采样，取中段的真实特征。
+						var dur = audio.duration || 0;
+						var introEnd = dur > 0 ? Math.min(15, dur * 0.2) : 15;
+						if (audio.currentTime < introEnd) return;
 						var feat = sampleAudio();
 						if (!feat) return;
 						var target = moonyForAudio(feat);
