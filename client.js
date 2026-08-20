@@ -513,6 +513,12 @@ window.__ModuleLoader__.load({
 			".dsa-range{flex:1;min-width:0;height:3px;-webkit-appearance:none;appearance:none;background:rgba(255,255,255,0.18);border-radius:3px;outline:none;cursor:pointer}",
 			".dsa-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:11px;height:11px;border-radius:50%;background:#fff;border:none;box-shadow:0 1px 4px rgba(0,0,0,0.45)}",
 			".dsa-range:disabled{opacity:0.4;cursor:not-allowed}",
+			".dsa-lyrics{margin-top:7px;max-height:180px;overflow-y:auto;border:1px solid rgba(255,255,255,0.12);border-radius:10px;background:rgba(255,255,255,0.05);padding:5px 4px;scrollbar-width:thin;overscroll-behavior:contain}",
+			".dsa-lyric-line{padding:3px 10px;font-size:11.5px;line-height:1.55;color:rgba(255,255,255,0.6);border-radius:8px;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .18s,background .18s}",
+			".dsa-lyric-line:hover{background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.9)}",
+			".dsa-lyric-line.cur{color:#fbbf24;font-weight:700;text-shadow:0 0 10px rgba(251,191,36,0.4)}",
+			".dsa-lyric-empty{padding:14px 10px;text-align:center;font-size:11px;color:rgba(255,255,255,0.45)}",
+			".dsa-lyric.active{color:#fbbf24;background:rgba(251,191,36,0.14)}",
 			".dsa-search{display:flex;gap:6px;margin-top:8px}",
 			".dsa-input{flex:1;min-width:0;background:rgba(255,255,255,0.13);border:1px solid rgba(255,255,255,0.22);border-radius:9px;color:#fff;font-size:12px;padding:5px 9px;outline:none;backdrop-filter:blur(6px)}",
 			".dsa-input:focus{border-color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.17)}",
@@ -748,6 +754,8 @@ window.__ModuleLoader__.load({
 			var [notice, setNotice] = React.useState(null); // {kind:'ok'|'err'|'', text}
 			var [busy, setBusy] = React.useState(false);
 			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
+			var [lyricsOpen, setLyricsOpen] = React.useState(false); // 展开视图歌词面板
+			var lyricsRef = React.useRef(null); // 歌词面板滚动容器
 			var [artistInfo, setArtistInfo] = React.useState(null); // {id, avatar}
 			var [ambientColor, setAmbientColor] = React.useState(null); // 当前唱片取色；失败时由角色本色回退
 			var noticeTimer = React.useRef(null);
@@ -879,16 +887,19 @@ window.__ModuleLoader__.load({
 			var stableCountRef = React.useRef(0);
 
 			var seekEndTimerRef = React.useRef(null);
-			// 进度条：拖动 seek（直接用 audio.currentTime，拖动结束由 timeupdate 接管）
-			var onSeek = function (e) {
+			// 跳转到指定秒数（进度条拖动 / 歌词行点击共用；直接用 audio.currentTime，随后由 timeupdate 接管）
+			var seekTo = function (v) {
 				var audio = audioRef.current;
-				if (!audio) return;
-				var v = Number(e.target.value);
+				if (!audio || typeof v !== "number" || !Number.isFinite(v)) return;
 				seekingRef.current = true;
 				try { audio.currentTime = v; } catch { /* ignore */ }
 				setProg({ pos: v, dur: audio.duration || prog.dur });
 				clearTimeout(seekEndTimerRef.current);
 				seekEndTimerRef.current = setTimeout(function () { seekingRef.current = false; }, 600);
+			};
+			// 进度条：拖动 seek
+			var onSeek = function (e) {
+				seekTo(Number(e.target.value));
 			};
 
 			// 状态轮询 → 直链变化时播放 / 播放状态同步
@@ -1234,6 +1245,13 @@ window.__ModuleLoader__.load({
 			// 歌词行与宠物锚点（展开/收起都计算，供测宽 effect 使用）
 			var position = state && state.playback ? state.playback.position : null;
 			var line = currentLrcLine(lrc, position);
+			// 当前歌词行索引（面板高亮 + 自动滚动用）
+			var curIdx = -1;
+			if (lrc && lrc.length > 0 && typeof position === "number") {
+				for (var li = 0; li < lrc.length; li++) {
+					if (lrc[li].t <= position) curIdx = li; else break;
+				}
+			}
 			// 宠物台词/通知优先（agent 播报），其次歌词
 			var isNotice = Boolean(state && state.notice);
 			var bubbleText = isNotice
@@ -1271,6 +1289,20 @@ window.__ModuleLoader__.load({
 				window.addEventListener("resize", measure);
 				return function () { window.removeEventListener("resize", measure); };
 			}, [bubbleText, bubbleMaxW, collapsed, pos, petScale]);
+
+			// 歌词面板：当前行移出可视区才自动滚回中间（用户手动翻阅时不打扰）
+			React.useEffect(function () {
+				if (!lyricsOpen || curIdx < 0) return;
+				var panel = lyricsRef.current;
+				if (!panel) return;
+				var el = panel.querySelector('[data-i="' + curIdx + '"]');
+				if (!el) return;
+				var top = el.offsetTop;
+				var bottom = top + el.clientHeight;
+				if (top < panel.scrollTop || bottom > panel.scrollTop + panel.clientHeight) {
+					panel.scrollTo({ top: top - (panel.clientHeight - el.clientHeight) / 2, behavior: "smooth" });
+				}
+			}, [lyricsOpen, curIdx]);
 
 			// 已关闭：浮动区域完全不渲染，仅保留侧边栏底部开关作为恢复入口。
 			if (hidden) return null;
@@ -1403,7 +1435,13 @@ window.__ModuleLoader__.load({
 								title: "播放模式：单击切换（列表循环 / 单曲循环 / 随机）",
 								disabled: !canControl,
 								onClick: function () { runCommand("playmode"); }
-							}, h(PlayModeIcon, { mode: state && typeof state.playMode === "number" ? state.playMode : 0 }))
+							}, h(PlayModeIcon, { mode: state && typeof state.playMode === "number" ? state.playMode : 0 })),
+							h("button", {
+								className: "dsa-btn dsa-mode dsa-lyric" + (lyricsOpen ? " active" : ""),
+								title: lyricsOpen ? "收起歌词面板" : "歌词面板（随播放滚动高亮）",
+								disabled: !canControl || !playing,
+								onClick: function () { setLyricsOpen(!lyricsOpen); }
+							}, "词")
 						]),
 						// 进度条
 						playing
@@ -1421,6 +1459,21 @@ window.__ModuleLoader__.load({
 									}),
 									h("span", { className: "tp" }, fmtClock(prog.dur))
 								])
+							: null,
+						// 歌词面板（轻量：随播放滚动高亮，点击某行跳转）
+						lyricsOpen && playing
+							? h("div", { ref: lyricsRef, className: "dsa-lyrics" },
+									lrc && lrc.length > 0
+										? lrc.map(function (ln, i) {
+												return h("div", {
+													key: i,
+													"data-i": i,
+													className: "dsa-lyric-line" + (i === curIdx ? " cur" : ""),
+													title: "点击跳转到此句",
+													onClick: function () { seekTo(ln.t); }
+												}, ln.text || "\u00A0");
+											})
+										: h("div", { className: "dsa-lyric-empty" }, "暂无歌词"))
 							: null,
 						// 搜索点歌（未搜索时只显示输入框，不显示歌曲/歌单 tab）
 						h("div", { className: "dsa-search" }, [

@@ -246,7 +246,7 @@ function findNodes(root, predicate) {
 	return found;
 }
 
-function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false, ambientPixels = null } = {}) {
+function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false, ambientPixels = null, apiUp = true } = {}) {
 	let definition;
 	let mountedPlayer;
 	let tree;
@@ -265,6 +265,7 @@ function loadMusicPlayerHarness({ storedId = null, storageUnavailable = false, a
 	};
 	const playerState = {
 		agentStatus: 'review',
+		musicApiUp: apiUp,
 		playing: { isPlaying: true, song: { id: 'song-1', name: 'Paper Moon', artists: 'Ella', albumPic: 'https://img.test/moon.jpg' } }
 	};
 	const rerender = function () {
@@ -486,6 +487,24 @@ test('MusicPlayer hides through the footer control and renders the picker only f
 	const allPickers = findNodes(rendered, (node) => node.props?.className === 'dsa-moony-menu');
 	assert.equal(allPickers.length, 1);
 	assert.equal(findNodes(body, (node) => node.props?.className === 'dsa-moony-menu').length, 0);
+});
+
+test('expanded player toggles the lightweight lyrics panel and shows an empty hint without lyrics', () => {
+	const harness = loadMusicPlayerHarness({ storedId: 'classic' });
+	findNodes(harness.tree(), (node) => node.type === harness.client.MoonyPet)[0].props.onClick({ stopPropagation() {} });
+	const lyricButtons = () => findNodes(harness.tree(), (node) => node.type === 'button' && String(node.props?.className || '').includes('dsa-lyric'));
+	assert.equal(lyricButtons().length, 1, 'a lyrics toggle button must exist in the expanded player');
+	assert.equal(lyricButtons()[0].props.disabled, false, 'lyrics button is enabled while a song is playing');
+	assert.equal(findNodes(harness.tree(), (node) => node.props?.className === 'dsa-lyrics').length, 0, 'panel is hidden by default');
+
+	lyricButtons()[0].props.onClick();
+	const panel = findNodes(harness.tree(), (node) => node.props?.className === 'dsa-lyrics')[0];
+	assert.ok(panel, 'clicking the lyrics button opens the panel');
+	assert.equal(findNodes(panel, (node) => node.props?.className === 'dsa-lyric-empty').length, 1, 'no lyrics loaded yet shows the empty hint');
+	assert.match(lyricButtons()[0].props.className, /active/, 'the toggle reflects the open state');
+
+	lyricButtons()[0].props.onClick();
+	assert.equal(findNodes(harness.tree(), (node) => node.props?.className === 'dsa-lyrics').length, 0, 'clicking again closes the panel');
 });
 
 test('picker exposes ten static preview options and selects the clicked character', () => {
