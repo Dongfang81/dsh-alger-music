@@ -813,6 +813,8 @@ window.__ModuleLoader__.load({
 			// 音频事件（进度/结束/播放状态）定时上报回服务端。
 			var audioRef = React.useRef(null);
 			var lastUrlRef = React.useRef(null); // 已加载的直链，避免重复播放
+			var lastSongIdRef = React.useRef(null); // 已识别的歌曲（听歌记忆重播检测）
+			var saidSongRef = React.useRef(null); // 已开口说过的歌曲（每首只说一次）
 			var [prog, setProg] = React.useState({ pos: 0, dur: 0 }); // 进度条显示（audio 实时事件驱动）
 			var [buffering, setBuffering] = React.useState(false); // waiting/stalled 到 canplay/playing 的真实缓冲窗口
 			var seekingRef = React.useRef(false); // 拖动中不刷新滑块位置
@@ -988,6 +990,19 @@ window.__ModuleLoader__.load({
 				}
 				// 系统媒体控制：同步元数据与播放状态
 				syncMediaSession(st.playing ? st.playing.song : null, stPlaying);
+				// 听歌记忆：切到常听歌曲时月宝儿开口（每首歌只说一次）
+				var sidNow = st.playing && st.playing.song ? st.playing.song.id : null;
+				if (sidNow && sidNow !== lastSongIdRef.current && sidNow !== saidSongRef.current) {
+					lastSongIdRef.current = sidNow;
+					post("/dsh-alger/habits", { action: "song", songId: sidNow }).then(function (r) {
+						if (r && r.ok && r.frequent) {
+							saidSongRef.current = sidNow;
+							post("/dsh-alger/say", { text: "这首你最近常听呢（第 " + r.plays + " 次了）～" }).catch(function () {});
+						}
+					}).catch(function () {});
+				} else if (!sidNow) {
+					lastSongIdRef.current = null;
+				}
 			}, [state]);
 
 			// 进度上报（2s 一次，供服务端状态/模型读取）
@@ -1002,6 +1017,14 @@ window.__ModuleLoader__.load({
 						ready: true
 					});
 				}, 2000);
+				return function () { clearInterval(timer); };
+			}, []);
+
+			// 听歌记忆：深夜提醒轮询（服务端判定并设置宠物通知，客户端 60s 问一次）
+			React.useEffect(function () {
+				var timer = setInterval(function () {
+					post("/dsh-alger/habits", { action: "night" }).catch(function () {});
+				}, 60000);
 				return function () { clearInterval(timer); };
 			}, []);
 

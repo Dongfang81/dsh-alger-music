@@ -10,6 +10,7 @@
     "./lib/alger.js": "./lib/alger.js",
     "./lib/player.js": "./lib/player.js",
     "./lib/api-server.js": "./lib/api-server.js",
+    "./lib/habits.js": "./lib/habits.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
     "./lib/source-match.js": "./lib/source-match.js"
@@ -25,7 +26,7 @@
     "test"
   ],
   "scripts": {
-    "check": "node --check index.js && node --check client.js && node --check lib/alger.js && node --check lib/player.js && node --check lib/api-server.js && node --check lib/source-match.js",
+    "check": "node --check index.js && node --check client.js && node --check lib/alger.js && node --check lib/player.js && node --check lib/api-server.js && node --check lib/source-match.js && node --check lib/habits.js",
     "test": "node --test test/*.test.mjs"
   },
   "dsh": {

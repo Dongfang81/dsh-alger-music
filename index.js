@@ -26,8 +26,11 @@
  * @module dsh-moony-singer
  */
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { createClient } from './lib/alger.js';
 import { createPlayer } from './lib/player.js';
+import { createHabits } from './lib/habits.js';
 import { startApiServer, stopApiServer } from './lib/api-server.js';
 import { matchSourceUrl, matchSourceByKeyword } from './lib/source-match.js';
 
@@ -109,8 +112,9 @@ function normalize(s) {
  * @param {object} shared - 共享状态（notice / agentStatus）
  * @param {object} player - 内置播放状态机（lib/player.js）
  * @param {object} apiHandle - 内置 API 服务状态（{handle, isUp, serverEntryPath}）
+ * @param {object} habits - 听歌记忆模块（lib/habits.js）
  */
-function buildActions(cfg, client, shared, player, apiHandle) {
+function buildActions(cfg, client, shared, player, apiHandle, habits) {
 	// 宠物台词/通知（agent → 宠物气泡，约 6 秒）
 	const noticeStore = { text: '', until: 0 };
 	shared.setNotice = (text, ms = 6000) => {
@@ -254,18 +258,44 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 			const MAX_ATTEMPTS = 3;
 			const failedIds = new Set(); // 踩过坑的歌单不再重复选
 			let lastErr = '';
+			// 听歌记忆：深夜（23–5 点）且近 7 天深夜活跃 → 优先舒缓歌单
+			const hour = new Date().getHours();
+			let nightSoothing = false;
+			if (hour >= 23 || hour < 5) {
+				try {
+					nightSoothing = (await habits.summary()).nightActive;
+				} catch {
+					/* 记忆不可用时保持默认推荐 */
+				}
+				if (nightSoothing) log('深夜模式：优先「轻音乐/助眠」歌单');
+			}
 			for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 				if (attempt > 1) log(`第 ${attempt} 次尝试…`);
 				try {
 					// 1) 拉推荐歌单列表，随机挑一个合适的歌单（过滤曲目过少的）
 					let playlists = [];
-					try {
-						const data = await client.getJson(`${client.apiBase}/personalized?limit=30`);
-						playlists = (data?.result || [])
-							.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3 && !failedIds.has(p.id))
-							.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
-					} catch {
-						/* 降级到热门歌单 */
+					if (nightSoothing) {
+						for (const kw of ['轻音乐', '助眠', '纯音乐']) {
+							try {
+								const res = await client.search(kw, 1000, 30);
+								playlists = (res.playlists || [])
+									.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3 && !failedIds.has(p.id))
+									.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
+							} catch {
+								/* 下一个关键词 */
+							}
+							if (playlists.length > 0) break;
+						}
+					}
+					if (playlists.length === 0) {
+						try {
+							const data = await client.getJson(`${client.apiBase}/personalized?limit=30`);
+							playlists = (data?.result || [])
+								.filter((p) => p && p.id && p.name && Number(p.trackCount) >= 3 && !failedIds.has(p.id))
+								.map((p) => ({ id: p.id, name: p.name, trackCount: Number(p.trackCount) || 0 }));
+						} catch {
+							/* 降级到热门歌单 */
+						}
 					}
 					if (playlists.length === 0) {
 						try {
@@ -480,6 +510,25 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				playing: Boolean(value.playing),
 				ready: Boolean(value.ready)
 			});
+			// 听歌记忆：累计实际收听（纯本地；失败静默，不影响播放）
+			try {
+				const song = player.state.queue[player.state.index] || null;
+				if (song && song.id) {
+					habits.recordPlayback({
+						song: {
+							id: song.id,
+							name: song.name,
+							artists: ((song.ar || song.artists || []).map((a) => a && a.name).filter(Boolean)).join('/'),
+							album: song.al ? song.al.name : (song.album || '')
+						},
+						position: Number(value.position) || 0,
+						duration: Number(value.duration) || 0,
+						playing: Boolean(player.state.playing)
+					}).catch(() => {});
+				}
+			} catch {
+				/* 忽略 */
+			}
 			return { ok: true };
 		},
 
@@ -689,6 +738,31 @@ function buildActions(cfg, client, shared, player, apiHandle) {
 				return { action, message: '已切换播放模式', playMode: m };
 			}
 			throw new Error('不支持的 action: ' + action);
+		},
+
+		/** alger_habits：听歌记忆（查看/清空本地播放习惯，纯本地不上传） */
+		async habits(args) {
+			const action = String(args?.action ?? 'summary');
+			if (action === 'clear') {
+				await habits.clear();
+				return { ok: true, cleared: true };
+			}
+			const s = await habits.summary();
+			return { ok: true, ...s };
+		},
+
+		/** 单曲常听判定（宠物互动：重播常听歌曲时开口） */
+		async songCheck(args) {
+			const id = Number(args?.songId);
+			if (!id) return { ok: false, error: '缺少 songId。' };
+			return { ok: true, ...(await habits.songCheck(id)) };
+		},
+
+		/** 深夜提醒判定（当日深夜累计 ≥2h 且 24h 内未提醒 → 触发宠物提醒） */
+		async nightCheck() {
+			const r = await habits.nightCheck();
+			if (r.remind) shared.setNotice('🌙 夜深了，早点休息～月宝儿先退下啦', 8000);
+			return { ok: true, ...r };
 		}
 	};
 }
@@ -967,7 +1041,43 @@ function buildTools(cfg, actions) {
 		timeoutMs: Math.max(cfg.timeoutMs, 45000)
 	};
 
-	return [status, setup, search, song, playlist, play, queue, control, say, recommend];
+	const habitsTool = {
+		name: 'alger_habits',
+		description:
+			'查看或清空月宝儿的本地听歌记忆（纯本地，不上传）：summary 返回常听歌曲 Top、常听歌手、今日收听时长、近 7 天深夜活跃度；clear 一键清空全部记忆。用于回答「最近常听什么」「今天听了多久」等习惯类问题。',
+		parameters: compileParameters({
+			action: {
+				type: 'string',
+				enum: ['summary', 'clear'],
+				required: true,
+				description: 'summary=查看总结；clear=清空全部听歌记忆。'
+			}
+		}),
+		output: {
+			schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+			render: (_args, value) => {
+				const rec = asRecord(value);
+				if (rec.cleared) return textBlock('已清空全部听歌记忆。');
+				const lines = [];
+				lines.push(`记忆: ${rec.totalSongs || 0} 首歌，累计播放 ${fmtDuration((rec.totalSeconds || 0) * 1000)}，共 ${rec.totalPlays || 0} 次`);
+				if (rec.todaySeconds) lines.push(`今日已听 ${fmtDuration(rec.todaySeconds * 1000)}`);
+				if (rec.topSongs && rec.topSongs.length) {
+					lines.push('常听歌曲:');
+					rec.topSongs.slice(0, 5).forEach((s, i) => lines.push(`  ${i + 1}. ${s.name}${s.artists ? ' - ' + s.artists : ''}（${s.plays} 次 / ${fmtDuration(s.seconds * 1000)}）`));
+				}
+				if (rec.topArtists && rec.topArtists.length) {
+					lines.push('常听歌手: ' + rec.topArtists.map((a) => `${a.name}（${fmtDuration(a.seconds * 1000)}）`).join('、'));
+				}
+				if (typeof rec.nightActive === 'boolean') lines.push(rec.nightActive ? '深夜活跃：近 7 天深夜常听' : '深夜不活跃');
+				lines.push('隐私: 全部数据仅存本机，可随时用 alger_habits action=clear 清空。');
+				return textBlock(lines);
+			}
+		},
+		execute: (rawArgs) => actions.habits(asRecord(rawArgs)),
+		timeoutMs: cfg.timeoutMs
+	};
+
+	return [status, setup, search, song, playlist, play, queue, control, say, recommend, habitsTool];
 }
 
 /** 读取 POST body（JSON 文本）。 */
@@ -1024,6 +1134,21 @@ function registerRoutes(webServer, actions) {
 				try {
 					const body = JSON.parse((await readBody(req)) || '{}');
 					json(res, await actions.say(body));
+				} catch (error) {
+					json(res, { ok: false, error: String((error && error.message) || error) });
+				}
+			}
+		},
+		{
+			kind: 'exact',
+			path: '/dsh-alger/habits',
+			handler: async (req, res) => {
+				try {
+					const body = JSON.parse((await readBody(req)) || '{}');
+					const action = String(body.action || '');
+					if (action === 'song') json(res, await actions.songCheck(body));
+					else if (action === 'night') json(res, await actions.nightCheck());
+					else json(res, await actions.habits(body));
 				} catch (error) {
 					json(res, { ok: false, error: String((error && error.message) || error) });
 				}
@@ -1162,6 +1287,8 @@ export function apply(ctx, config) {
 	// 内置播放状态机 + 音乐 API 客户端（不再依赖任何桌面播放器）
 	const player = createPlayer();
 	const client = createClient(cfg);
+	// 听歌记忆（纯本地播放习惯记录）
+	const habits = createHabits();
 
 	// 内置音乐 API 服务（netease-cloud-music-api-alger）自动启动
 	const apiHandle = {
@@ -1238,7 +1365,7 @@ export function apply(ctx, config) {
 		return best;
 	};
 
-	const actions = buildActions(cfg, client, shared, player, apiHandle);
+	const actions = buildActions(cfg, client, shared, player, apiHandle, habits);
 	const disposers = [];
 	for (const definition of buildTools(cfg, actions)) {
 		disposers.push(ctx.tools.register(definition));
