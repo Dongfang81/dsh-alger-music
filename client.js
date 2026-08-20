@@ -894,8 +894,8 @@ window.__ModuleLoader__.load({
 					var idx = (r.queueLength || 1) - 1;
 					return queueApi({ action: "jump", index: idx }).then(function (jr) {
 						setBusy(false);
-						if (jr && jr.ok) flash("ok", "已添加并播放：" + (jr.playedName || item.name));
-						else flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
+						// 成功：播放列表已展开、当前曲高亮，界面直观可见，无需提示
+						if (!jr || !jr.ok) flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
 						setQueueOpen(true); // 添加成功：自动展开播放列表展示新歌
 						setTimeout(refresh, 600);
 					});
@@ -908,8 +908,7 @@ window.__ModuleLoader__.load({
 				setBusy(true);
 				queueApi({ action: "add-all", keyword: q, limit: 30 }).then(function (r) {
 					if (!r || !r.ok) { setBusy(false); flash("err", (r && r.guidance) || (r && r.error) || "加入失败"); return; }
-					flash("ok", "已一键加入播放列表（" + (r.added || 0) + " 首）");
-					setQueueOpen(true); // 一键加入：自动展开播放列表
+					setQueueOpen(true); // 一键加入：自动展开播放列表（数量变化直观可见，无需提示）
 					// 当前没在播放时，自动从这批歌的第一首开始按顺序播
 					if (!isPlaying) {
 						var added = r.added || 0;
@@ -935,8 +934,8 @@ window.__ModuleLoader__.load({
 					var idx = (r.queueLength || added) - added;
 					return queueApi({ action: "jump", index: idx }).then(function (jr) {
 						setBusy(false);
-						if (jr && jr.ok) flash("ok", "歌单已添加并播放：" + (item.name || "") + "（" + added + " 首）");
-						else flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
+						// 成功：播放列表已展开、歌单歌曲可见，无需提示
+						if (!jr || !jr.ok) flash("err", (jr && jr.guidance) || (jr && jr.error) || "播放失败");
 						setQueueOpen(true); // 歌单添加成功：自动展开播放列表
 						setTimeout(refresh, 600);
 					});
@@ -951,8 +950,8 @@ window.__ModuleLoader__.load({
 				setBusy(true);
 				queueApi({ action: "jump", index: i }).then(function (r) {
 					setBusy(false);
-					if (r && r.ok) flash("ok", "已跳转播放：" + (r.playedName || ""));
-					else flash("err", (r && r.guidance) || (r && r.error) || "播放失败");
+					// 成功：播放列表当前曲高亮可见，无需提示
+					if (!r || !r.ok) flash("err", (r && r.guidance) || (r && r.error) || "播放失败");
 					setTimeout(refresh, 600);
 				}).catch(function () { setBusy(false); flash("err", "播放失败"); });
 			};
@@ -973,8 +972,8 @@ window.__ModuleLoader__.load({
 				setBusy(true);
 				queueApi({ action: "clear" }).then(function (r) {
 					setBusy(false);
-					if (r && r.ok) flash("ok", "播放列表已清空");
-					else flash("err", (r && r.guidance) || (r && r.error) || "清空失败");
+					// 成功：列表清空、界面直观可见，无需提示
+					if (!r || !r.ok) flash("err", (r && r.guidance) || (r && r.error) || "清空失败");
 					setTimeout(refresh, 400);
 				}).catch(function () { setBusy(false); flash("err", "清空失败"); });
 			};
