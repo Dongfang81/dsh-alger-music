@@ -812,6 +812,7 @@ window.__ModuleLoader__.load({
 				}
 				if (sampleAudio) {
 					var currentSongRef = null; // 当前分析中的歌曲（切歌时重置）
+					var matchedSongRef = null; // 已完成风格匹配的歌曲：本歌不再采样（避免播放中频繁切换）
 					analyzerTimer = setInterval(function () {
 						if (!autoMatchRef.current) return;
 						var song = stateRef.current && stateRef.current.playing ? stateRef.current.playing.song : null;
@@ -819,10 +820,13 @@ window.__ModuleLoader__.load({
 						// 切歌时重置候选，避免旧歌特征误匹配新歌
 						if (currentSongRef !== song.id) {
 							currentSongRef = song.id;
+							matchedSongRef = null;
 							candidateRef.current = null;
 							stableCountRef.current = 0;
 							return;
 						}
+						// 本歌风格已确定：停止采样（一首歌只匹配一次，播放中不频繁换月宝）
+						if (matchedSongRef === song.id) return;
 						var feat = sampleAudio();
 						if (!feat) return;
 						var target = moonyForAudio(feat);
@@ -836,6 +840,7 @@ window.__ModuleLoader__.load({
 							if (cur !== target) {
 								setPetId(writeStoredMoonyId(getLocalStorage(), target));
 							}
+							matchedSongRef = song.id; // 风格已定，本歌停止采样
 						}
 					}, 1200);
 				}
