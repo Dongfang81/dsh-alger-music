@@ -34,7 +34,7 @@ import { createHabits } from './lib/habits.js';
 import { startApiServer, stopApiServer } from './lib/api-server.js';
 import { matchSourceUrl, matchSourceByKeyword } from './lib/source-match.js';
 
-export const name = 'dsh-moony-singer';
+export const name = 'dsh-music';
 export const inject = ['subprocess', 'tools', 'webServer'];
 
 /** 默认配置（可被 cordis.patch.yml 的 config 覆盖）。 */

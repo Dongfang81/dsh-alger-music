@@ -1707,7 +1707,7 @@ window.__ModuleLoader__.load({
 		var inject = ["slots"];
 		exports.apply = apply;
 		exports.inject = inject;
-		exports.name = "dsh-moony-singer";
+		exports.name = "dsh-music";
 		exports.parseLrc = parseLrc;
 		exports.syncMediaSession = syncMediaSession;
 		exports.MOONY_CSS = MOONY_CSS;

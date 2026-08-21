@@ -1,4 +1,4 @@
-# 🎵 dsh-moony-singer · 月宝儿 Moony
+# 🎵 dsh-music · 月宝儿 Moony
 
 > ## 第一款真正意义上的 AI 原生音乐播放器
 >
@@ -107,7 +107,7 @@ dsh plugin --profile web add github:Dongfang81/moony-singer
 
 ```yaml
 - id: alger-music
-  name: 'dsh-moony-singer'
+  name: 'dsh-music'
   config:
     musicApiPort: 30588   # 内置音乐 API 端口
     musicApiHost: '127.0.0.1'
