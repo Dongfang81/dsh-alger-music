@@ -398,35 +398,55 @@ window.__ModuleLoader__.load({
 		}
 		/**
 		 * 创建挂在 audio 元素上的音频分析器。
-		 * 注意：createMediaElementSource 会把 audio 输出重路由到 Web Audio 图，
-		 * 而 AudioContext 默认 suspended（自动播放策略）——必须 resume 并保持连接，
-		 * 否则会「显示播放中但无声」。因此这里主动 resume，并在用户交互时再次恢复。
+		 *
+		 * 静音铁律：createMediaElementSource 会把 audio 输出重路由进 Web Audio 图，
+		 * 一旦路由，若 AudioContext 处于 suspended（自动播放策略），音频就「播放中
+		 * 但无声」。因此本实现【只在上下文确认 running 之后才路由】；在此之前 audio
+		 * 保持原生直连扬声器，任何情况下都不会因为分析器而静音。路由后若上下文被
+		 * 挂起，则在采样与用户交互时持续尝试恢复。
 		 * @returns {function|null} 采样函数（返回 {bass,energy,vocal} 或 null）
 		 */
 		function attachAudioAnalyzer(audio) {
 			try {
 				if (typeof window === "undefined" || !window.AudioContext || !audio) return null;
 				var ctx = new (window.AudioContext || window.webkitAudioContext)();
-				var resumeCtx = function () {
-					if (ctx && ctx.state === "suspended") {
-						var p = ctx.resume();
-						if (p && typeof p.catch === "function") p.catch(function () { /* 浏览器拦截时忽略 */ });
+				var routed = false; // 是否已把 audio 重路由进 Web Audio 图
+				var analyser = null;
+				var buf = new Uint8Array(0);
+				var resumePending = false;
+				var routeNow = function () {
+					if (routed) return;
+					try {
+						var src = ctx.createMediaElementSource(audio);
+						analyser = ctx.createAnalyser();
+						analyser.fftSize = 256;
+						src.connect(analyser);
+						analyser.connect(ctx.destination); // 保持音频输出（重路由后必须连回 destination）
+						buf = new Uint8Array(analyser.frequencyBinCount);
+						routed = true;
+					} catch {
+						/* 路由失败（如重复路由）：保持原生输出 */
 					}
 				};
-				resumeCtx();
+				var resumeCtx = function () {
+					if (ctx.state !== "suspended" || resumePending) return;
+					resumePending = true;
+					var p = ctx.resume();
+					if (p && typeof p.then === "function") {
+						p.then(function () {
+							resumePending = false;
+							if (ctx.state === "running") routeNow(); // 恢复成功后立即路由
+						}).catch(function () { resumePending = false; /* 浏览器拦截时忽略 */ });
+					} else {
+						resumePending = false;
+					}
+				};
 				document.addEventListener("pointerdown", resumeCtx, true); // 用户交互恢复音频上下文
-				var src = ctx.createMediaElementSource(audio);
-				var analyser = ctx.createAnalyser();
-				analyser.fftSize = 256;
-				src.connect(analyser);
-				analyser.connect(ctx.destination); // 保持音频输出（重路由后必须连回 destination）
-				var buf = new Uint8Array(analyser.frequencyBinCount);
-				sample.ctx = ctx;
-				sample.resume = resumeCtx;
-				return sample;
-				function sample() {
+				resumeCtx();
+				return function sample() {
 					if (audio.paused || audio.ended || audio.readyState < 2) return null;
-					if (ctx.state === "suspended") resumeCtx();
+					resumeCtx(); // 未 running 时持续尝试恢复；恢复成功后才路由
+					if (!routed || !analyser || ctx.state !== "running") return null;
 					analyser.getByteFrequencyData(buf);
 					var n = buf.length;
 					var bassSum = 0, midSum = 0, total = 0;
