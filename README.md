@@ -69,7 +69,7 @@
 ## 🚀 30 秒上手
 
 ```bash
-dsh plugin --profile web add github:Dongfang81/moony-singer
+dsh plugin --profile web add github:Dongfang81/dsh-music
 # 重启 dsh web 后，右下角就出现月宝儿了
 ```
 
@@ -100,14 +100,18 @@ Moony 系列：**圆脸 + 耳朵**。所有宠物共用圆形月面（可装载�
 ## 📦 安装与配置
 
 ```bash
-dsh plugin --profile web add github:Dongfang81/moony-singer
+# 方式一：npm 安装（推荐）
+dsh plugin --profile web add @dongfang81/dsh-music
+
+# 方式二：GitHub 仓库安装
+dsh plugin --profile web add github:Dongfang81/dsh-music
 ```
 
 可选配置（`cordis.patch.yml`）：
 
 ```yaml
 - id: alger-music
-  name: 'dsh-music'
+  name: '@dongfang81/dsh-music'
   config:
     musicApiPort: 30588   # 内置音乐 API 端口
     musicApiHost: '127.0.0.1'

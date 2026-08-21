@@ -2,7 +2,7 @@
 # 用户可在自己 profile 的 cordis.patch.yml 里按 id 覆盖整个 config（见 README）。
 - insert:
     - id: alger-music
-      name: 'dsh-music'
+      name: '@dongfang81/dsh-music'
       config:
         # 内置音乐 API 服务（开源网易云音乐 API）监听端口，仅本机回环
         musicApiPort: 30588
