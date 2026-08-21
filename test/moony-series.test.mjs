@@ -566,6 +566,27 @@ test('picker highlights the auto-matched recommended pet with a 荐 badge', () =
 	assert.equal(findNodes(plain, (node) => node.props?.children === '荐').length, 0, 'no recommendation prop means no badges');
 });
 
+test('moonyForAudio always maps any active audio to a known pet', () => {
+	const { moonyForAudio } = loadClient();
+	const pets = new Set(['classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush', 'loop', 'bass', 'vinyl']);
+	// 网格采样：任何特征组合都必须映射到合法角色（推荐不追求精确，但必须有结果）
+	for (let b = 0; b <= 0.7; b += 0.1) {
+		for (let e = 0; e <= 0.7; e += 0.1) {
+			for (let v = 0; v <= 0.7; v += 0.1) {
+				const r = moonyForAudio({ bass: b, energy: e, vocal: v });
+				assert.ok(pets.has(r), `unmapped feature bass=${b} energy=${e} vocal=${v} -> ${r}`);
+			}
+		}
+	}
+	assert.equal(moonyForAudio({ bass: 0.1, energy: 0.05, vocal: 0.1 }), 'hush');
+	assert.equal(moonyForAudio({ bass: 0.6, energy: 0.5, vocal: 0.2 }), 'bass');
+	assert.equal(moonyForAudio({ bass: 0.2, energy: 0.7, vocal: 0.3 }), 'pulse');
+	assert.equal(moonyForAudio({ bass: 0.3, energy: 0.4, vocal: 0.6 }), 'chorus');
+	assert.equal(moonyForAudio({ bass: 0.3, energy: 0.2, vocal: 0.3 }), 'drift');
+	assert.equal(moonyForAudio({ bass: 0.45, energy: 0.35, vocal: 0.3 }), 'echo');
+	assert.equal(moonyForAudio({ bass: 0.3, energy: 0.45, vocal: 0.3 }), 'classic');
+});
+
 test('idle Classic has a blank face with no image, Emoji, or tail', () => {
 	const { MoonyPet } = loadClient();
 	const tree = MoonyPet({ petId: 'classic', agentStatus: 'idle', mediaUrl: null, isPlaying: false });

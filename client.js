@@ -379,22 +379,23 @@ window.__ModuleLoader__.load({
 			try { if (storage) storage.setItem(STORE_AUTO_MATCH, on ? "1" : "0"); } catch { /* ignore */ }
 		}
 		/**
-		 * 音频特征 → Moony 角色映射。
+		 * 音频特征 → Moony 角色映射（全覆盖：任何有效音频都映射到一个角色，
+		 * 不追求精确——推荐只是建议，用户点「变身」才生效）。
 		 * 输入: { bass (低频占比 0~1), energy (整体能量 0~1), vocal (中频人声占比 0~1) }
-		 * 原则: 重低音→Bass；强劲→Pulse；安静→Hush；舒缓→Drift；人声突出→Chorus；
-		 *       中低频回忆感→Echo；均衡→Classic。映射仅在特征明显时生效。
+		 * 原则: 极安静→Hush；重低音→Bass；强劲→Pulse；人声突出→Chorus；
+		 *       舒缓→Drift；中低频→Echo；其余→Classic（兜底）。
 		 */
 		function moonyForAudio(feat) {
 			var bass = Number(feat && feat.bass) || 0;
 			var energy = Number(feat && feat.energy) || 0;
 			var vocal = Number(feat && feat.vocal) || 0;
-			if (bass > 0.55 && energy > 0.4) return "bass";        // 重低音
-			if (energy > 0.62 && bass < 0.45) return "pulse";      // 强劲节拍
-			if (energy < 0.16) return "hush";                      // 极安静
-			if (vocal > 0.5 && energy > 0.3) return "chorus";      // 人声突出
-			if (bass > 0.4 && energy > 0.3) return "echo";         // 中低频
-			if (energy < 0.32) return "drift";                     // 舒缓
-			return null; // 特征不明显：保持当前角色
+			if (energy < 0.14) return "hush";                    // 极安静/纯音乐
+			if (bass > 0.52 && energy > 0.3) return "bass";      // 重低音
+			if (energy > 0.6) return "pulse";                    // 强劲节拍
+			if (vocal > 0.45 && energy > 0.24) return "chorus";  // 人声突出
+			if (energy < 0.3) return "drift";                    // 舒缓
+			if (bass > 0.42 && energy > 0.26) return "echo";     // 中低频回忆感
+			return "classic";                                    // 均衡兜底
 		}
 		/**
 		 * 创建挂在 audio 元素上的音频分析器。
@@ -433,10 +434,14 @@ window.__ModuleLoader__.load({
 					resumePending = true;
 					var p = ctx.resume();
 					if (p && typeof p.then === "function") {
+						var settled = false;
+						var finish = function () { if (!settled) { settled = true; resumePending = false; } };
 						p.then(function () {
-							resumePending = false;
+							finish();
 							if (ctx.state === "running") routeNow(); // 恢复成功后立即路由
-						}).catch(function () { resumePending = false; /* 浏览器拦截时忽略 */ });
+						}).catch(function () { finish(); /* 浏览器拦截时忽略，稍后重试 */ });
+						// 兜底：resume 长期不落定（如无音频设备）→ 释放 pending 允许重试
+						setTimeout(function () { finish(); }, 2500);
 					} else {
 						resumePending = false;
 					}
@@ -858,8 +863,13 @@ window.__ModuleLoader__.load({
 				audio.addEventListener("durationchange", syncProg);
 				audio.addEventListener("loadedmetadata", syncProg);
 				audio.addEventListener("ended", function () {
-					// 自然结束：告诉服务端播下一首（按播放模式）
+					// 自然结束：按播放模式处理（单曲循环本地重播；列表循环/随机交给服务端 next）
 					reportPlayback({ playing: false, position: 0, duration: audio.duration || 0, ready: true });
+					var mode = stateRef.current && typeof stateRef.current.playMode === "number" ? stateRef.current.playMode : 0;
+					if (mode === 1) {
+						try { audio.currentTime = 0; var rp = audio.play(); if (rp && typeof rp.catch === "function") rp.catch(function () {}); } catch { /* ignore */ }
+						return;
+					}
 					command("next").then(function () { setTimeout(refresh, 300); }).catch(function () {});
 				});
 				audio.addEventListener("error", function () {
@@ -1758,6 +1768,7 @@ window.__ModuleLoader__.load({
 		exports.name = "@dongfang81/dsh-music";
 		exports.parseLrc = parseLrc;
 		exports.syncMediaSession = syncMediaSession;
+		exports.moonyForAudio = moonyForAudio;
 		exports.MOONY_CSS = MOONY_CSS;
 		exports.MOONY_CATALOG = MOONY_CATALOG;
 		exports.MOONY_STATUS = MOONY_STATUS;
