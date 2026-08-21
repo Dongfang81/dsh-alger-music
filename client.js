@@ -913,11 +913,15 @@ window.__ModuleLoader__.load({
 			var stableCountRef = React.useRef(0);
 			var currentSongRef = React.useRef(null); // 当前分析中的歌曲（切歌时重置）
 			var matchedSongRef = React.useRef(null); // 已完成推荐的歌曲（每首歌只推荐一次）
+			var recentRef = React.useRef([]); // 最近几次采样（取能量最高者当特征，前奏的低能量采样会被主旋律覆盖）
 			var analyzerRef = React.useRef(null); // 已挂载的采样函数（createMediaElementSource 对同一元素只能调一次）
 			var analyzerTimerRef = React.useRef(null);
 			// 惰性挂载音频分析器并启动采样定时器。行为：识别到稳定风格后
 			// 只「推荐」角色（recPetId 高亮 + 宠物开口提示），不自动变身——
 			// 由用户点「变身」按钮确认切换。
+			// 即时性：不跳过前奏——音频数据就绪即采样（800ms 间隔），连续 2 次
+			// 命中同一角色即推荐（约 1.6–2.4s 出结果）；用「最近 3 次采样中能量
+			// 最高的一次」作为特征，前奏低能量段不会压住主旋律。
 			var ensureAnalyzer = function () {
 				var audio = audioRef.current;
 				if (!audio || analyzerRef.current) return;
@@ -935,34 +939,37 @@ window.__ModuleLoader__.load({
 						matchedSongRef.current = null;
 						candidateRef.current = null;
 						stableCountRef.current = 0;
+						recentRef.current = [];
 						setRecPetId(null);
 						return;
 					}
-					// 本歌风格已确定：停止采样（一首歌只推荐一次）
-					if (matchedSongRef.current === song.id) return;
-					// 跳过前奏：歌曲开头通常是进场/纯音乐铺垫，特征不代表整首歌。
-					// 从歌曲前 20%（最多 15 秒）之后才开始采样，取中段的真实特征。
-					var dur = audio.duration || 0;
-					var introEnd = dur > 0 ? Math.min(15, dur * 0.2) : 15;
-					if (audio.currentTime < introEnd) return;
 					var feat = sampleAudio();
 					if (!feat) return;
-					var target = moonyForAudio(feat);
+					recentRef.current.push(feat);
+					if (recentRef.current.length > 3) recentRef.current.shift();
+					// 取能量最高的采样作为当前特征（前奏铺垫能量低，会被主旋律覆盖）
+					var eff = recentRef.current[0];
+					for (var i = 1; i < recentRef.current.length; i++) {
+						if (recentRef.current[i].energy > eff.energy) eff = recentRef.current[i];
+					}
+					var target = moonyForAudio(eff);
 					if (!target) { stableCountRef.current = 0; return; }
 					// 连续 N 次命中同一角色才推荐（避免特征波动导致推荐频繁跳动）
 					if (candidateRef.current === target) stableCountRef.current += 1;
 					else { candidateRef.current = target; stableCountRef.current = 1; }
-					if (stableCountRef.current >= 3) {
+					if (stableCountRef.current >= 2) {
 						stableCountRef.current = 0;
-						var cur = readStoredMoonyId(getLocalStorage());
-						setRecPetId(target);
-						matchedSongRef.current = song.id; // 风格已定，本歌停止采样
-						// 推荐与当前角色不同时才开口提示（每首歌只说一次）
-						if (cur !== target) {
-							post("/dsh-alger/say", { text: "这首适合 " + getMoony(target).name + "，点「变身」试试？" }).catch(function () { /* 忽略 */ });
+						setRecPetId(target); // 整首歌持续更新：前奏误判会被主旋律覆盖
+						// 开口提示每首歌只说一次（角色变化时）
+						if (matchedSongRef.current !== song.id) {
+							matchedSongRef.current = song.id;
+							var cur = readStoredMoonyId(getLocalStorage());
+							if (cur !== target) {
+								post("/dsh-alger/say", { text: "这首适合 " + getMoony(target).name + "，点「变身」试试？" }).catch(function () { /* 忽略 */ });
+							}
 						}
 					}
-				}, 1200);
+				}, 800);
 			};
 			// 自动匹配开关变化：开启时确保分析器挂载（修复「勾选后不生效」——
 			// 分析器不再只在页面加载时按初始状态挂载）；关闭时清掉当前推荐
