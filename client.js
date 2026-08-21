@@ -245,6 +245,53 @@ window.__ModuleLoader__.load({
 			]);
 		}
 
+		/* ---------- 微信分享面板（朋友无需安装插件） ----------
+		 * 网易云公开链接 + 剪贴板复制 + 二维码（二维码走公共服务，失败自动降级隐藏，
+		 * 分享核心链路始终可用：复制链接 → 微信粘贴 → 自动渲染歌曲卡片）。
+		 */
+		function SharePanel(props) {
+			var song = props && props.song;
+			var link = shareLinkFor(song);
+			var [qrTier, setQrTier] = React.useState(0);
+			var [copied, setCopied] = React.useState(false);
+			React.useEffect(function () { setQrTier(0); setCopied(false); }, [link]);
+			if (!song || !link) return null;
+			var qrSrc = null;
+			if (qrTier === 0) qrSrc = "https://api.pwmqr.com/qrcode/create/?url=" + encodeURIComponent(link);
+			else if (qrTier === 1) qrSrc = "https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=" + encodeURIComponent(link);
+			return h("div", { className: "dsa-share-menu", role: "dialog", "aria-label": "分享这首歌" }, [
+				// 关闭按钮：标准弹窗右上角
+				h("button", { className: "dsa-share-x", title: "关闭", onClick: props.onClose }, "✕"),
+				h("div", { className: "dsa-share-head" }, [
+					h("img", { className: "dsa-share-cover", src: song.albumPic || "", alt: "", draggable: false }),
+					h("div", { className: "dsa-share-meta" }, [
+						h("strong", null, song.name || ""),
+						h("small", null, String(song.artists || "").split(",").filter(Boolean).join(" / "))
+					])
+				]),
+				h("div", { className: "dsa-share-link", title: link }, link),
+				h("div", { className: "dsa-share-row" }, [
+					h("button", {
+						className: "dsa-btn dsa-mode dsa-share-copy" + (copied ? " on" : ""),
+						onClick: function () {
+							copyTextToClipboard(link).then(function (ok) {
+								setCopied(ok);
+								if (ok && typeof props.onCopied === "function") props.onCopied(link);
+							});
+						}
+					}, copied ? "✓ 已复制" : "复制链接")
+				]),
+				qrTier < 2 && qrSrc
+					? h("div", { className: "dsa-share-qr-wrap" }, [
+							h("img", { className: "dsa-share-qr", src: qrSrc, alt: "二维码", onError: function () { setQrTier(function (t) { return Math.min(2, t + 1); }); } }),
+							h("small", null, "朋友扫码即可打开（或复制链接发微信）")
+						])
+					: h("div", { className: "dsa-share-qr-wrap fail" }, [
+							h("small", null, "二维码服务暂不可用，请用「复制链接」分享")
+						])
+			]);
+		}
+
 		function resolveMoonyState(input) {
 			var value = input && typeof input === "object" ? input : {};
 			var status = typeof value.agentStatus === "string" && Object.prototype.hasOwnProperty.call(MOONY_STATUS, value.agentStatus) ? value.agentStatus : "idle";
@@ -336,6 +383,65 @@ window.__ModuleLoader__.load({
 				else break;
 			}
 			return cur;
+		}
+		/* ---------- 微信分享：网易云公开链接 + 剪贴板（朋友无需装插件） ----------
+		 * 插件内 songId 即网易云歌曲 ID，拼公开链接即可让任何人在微信/浏览器打开收听；
+		 * 复制走 navigator.clipboard，失败（非安全上下文/权限拒绝）回退 textarea + execCommand。
+		 */
+		function shareLinkFor(song) {
+			var id = song && Number(song.id);
+			return id > 0 ? "https://music.163.com/song?id=" + id : null;
+		}
+		function legacyCopy(text) {
+			try {
+				var ta = document.createElement("textarea");
+				ta.value = text;
+				ta.setAttribute("readonly", "");
+				ta.style.position = "fixed";
+				ta.style.top = "-9999px";
+				ta.style.opacity = "0";
+				document.body.appendChild(ta);
+				ta.select();
+				var ok = false;
+				try { ok = document.execCommand("copy"); } catch { /* ignore */ }
+				document.body.removeChild(ta);
+				return ok;
+			} catch { return false; }
+		}
+		function copyTextToClipboard(text) {
+			return new Promise(function (resolve) {
+				try {
+					if (navigator.clipboard && navigator.clipboard.writeText) {
+						navigator.clipboard.writeText(text).then(function () { resolve(true); }).catch(function () { resolve(legacyCopy(text)); });
+						return;
+					}
+				} catch { /* 走兜底 */ }
+				resolve(legacyCopy(text));
+			});
+		}
+		/**
+		 * 卡拉 OK 逐字进度：当前歌词行「已唱过」的比例 0~1。
+		 * 行尾取下一句时间戳；最后一行没有下一句，用前文合理句长（0.2~20s）的均值兜底，
+		 * 完全没有参考时按 4 秒估算。非法输入一律返回 0。
+		 */
+		function karaokeProgress(lrc, idx, position) {
+			if (!lrc || !Array.isArray(lrc) || lrc.length === 0 || !Number.isInteger(idx) || idx < 0 || idx >= lrc.length) return 0;
+			if (typeof position !== "number" || !Number.isFinite(position)) return 0;
+			var start = Number(lrc[idx].t) || 0;
+			if (position <= start) return 0;
+			var end = idx + 1 < lrc.length ? Number(lrc[idx + 1].t) || start : start;
+			if (!(end > start)) {
+				var total = 0, n = 0;
+				for (var i = 1; i < lrc.length; i++) {
+					var gap = (Number(lrc[i].t) || 0) - (Number(lrc[i - 1].t) || 0);
+					if (gap > 0.2 && gap < 20) { total += gap; n++; }
+				}
+				end = start + (n > 0 ? total / n : 4);
+			}
+			var span = end - start;
+			if (!(span > 0.05)) return 0;
+			var p = (position - start) / span;
+			return p <= 0 ? 0 : p >= 1 ? 1 : p;
 		}
 
 		/* ---------- 系统媒体控制（Media Session API） ----------
@@ -547,6 +653,26 @@ window.__ModuleLoader__.load({
 			"@keyframes dsa-moony-running{from{rotate:-7deg}to{rotate:7deg}}@keyframes dsa-moony-waiting{0%,100%{translate:-1px 0}50%{translate:2px 1px}}@keyframes dsa-moony-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-review{from{translate:0 0}to{translate:0 -3px}}",
 			"@keyframes dsa-moony-tail-sway{from{rotate:-5deg}to{rotate:7deg}}@keyframes dsa-moony-tail-listen{0%,100%{translate:0 0}50%{translate:0 -2px}}@keyframes dsa-moony-tail-failed{0%,100%{translate:0 0}25%{translate:-2px 0}75%{translate:2px 0}}@keyframes dsa-moony-tail-review{from{translate:0 0}to{translate:0 -2px}}",
 			".dsa-moony-menu{position:absolute;right:0;top:48px;z-index:30;width:224px;max-height:min(420px,calc(100vh - 120px));overflow-y:auto;overscroll-behavior:contain;padding:6px;border:1px solid rgba(255,255,255,.2);border-radius:12px;background:rgba(21,22,31,.96);box-shadow:0 14px 34px rgba(0,0,0,.48);backdrop-filter:blur(18px);display:grid;gap:3px;scrollbar-width:thin}",
+			".dsa-share{width:28px;padding:0;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);color:rgba(255,255,255,.9);border-radius:9px;text-shadow:none}",
+			".dsa-share:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3)}",
+			".dsa-share.active{background:rgba(96,165,250,.2);border-color:rgba(96,165,250,.5);color:#93c5fd}",
+			".dsa-share-menu{position:absolute;right:0;top:48px;z-index:30;width:244px;padding:10px;border:1px solid rgba(255,255,255,.2);border-radius:12px;background:rgba(21,22,31,.96);box-shadow:0 14px 34px rgba(0,0,0,.48);backdrop-filter:blur(18px)}",
+			".dsa-share-x{position:absolute;top:8px;right:8px;width:22px;height:22px;border:none;background:transparent;color:rgba(255,255,255,.6);border-radius:7px;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:2}",
+			".dsa-share-x:hover{background:rgba(255,255,255,.12);color:#fff}",
+			".dsa-share-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-right:26px}",
+			".dsa-share-cover{width:42px;height:42px;border-radius:8px;object-fit:cover;flex:none;background:rgba(255,255,255,.08)}",
+			".dsa-share-meta{flex:1;min-width:0}",
+			".dsa-share-meta strong{display:block;font-size:12.5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+			".dsa-share-meta small{display:block;font-size:10.5px;color:rgba(255,255,255,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}",
+			".dsa-share-link{margin-bottom:8px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.08);font-size:10.5px;color:rgba(255,255,255,.75);word-break:break-all;max-height:44px;overflow-y:auto;line-height:1.4;scrollbar-width:thin}",
+			".dsa-share-row{display:flex;align-items:center;gap:6px;margin-bottom:8px}",
+			".dsa-share-copy{flex:1;border:1px solid rgba(96,165,250,.45);background:rgba(96,165,250,.14);color:#93c5fd;border-radius:9px;font-size:11.5px;padding:6px 0;cursor:pointer;font-weight:600}",
+			".dsa-share-copy:hover{background:rgba(96,165,250,.24)}",
+			".dsa-share-copy.on{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.14);color:#6ee7b7}",
+			".dsa-share-qr-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)}",
+			".dsa-share-qr{width:132px;height:132px;border-radius:8px;background:#fff;padding:6px}",
+			".dsa-share-qr-wrap small{font-size:10px;color:rgba(255,255,255,.5)}",
+			".dsa-share-qr-wrap.fail small{color:rgba(255,255,255,.4)}",
 			"@media (prefers-reduced-motion:reduce){.dsa-moony-rhythm,.dsa-moony-ear,.dsa-moony-ear::after,.dsa-moony-tail,.dsa-moony-phase-gap{animation:none!important}}"
 		].join("\n");
 		var CSS = [
@@ -584,6 +710,10 @@ window.__ModuleLoader__.load({
 			".dsa-lyric-line{padding:3px 10px;font-size:11.5px;line-height:1.55;color:rgba(255,255,255,0.6);border-radius:8px;cursor:pointer;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .18s,background .18s}",
 			".dsa-lyric-line:hover{background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.9)}",
 			".dsa-lyric-line.cur{color:#fbbf24;font-weight:700;text-shadow:0 0 10px rgba(251,191,36,0.4)}",
+			".dsa-lyric-line.cur.karaoke{color:rgba(255,255,255,0.5);text-shadow:none;font-weight:400}",
+			".dsa-lyric-k-wrap{display:block;overflow:hidden;text-align:center}",
+			".dsa-lyric-k-wrap.scroll{text-align:left}",
+			".dsa-lyric-karaoke{display:inline-block;white-space:nowrap;background-image:linear-gradient(90deg,#fbbf24 0,#fbbf24 var(--k,0%),rgba(255,255,255,0.5) var(--k,0%),rgba(255,255,255,0.5) 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}",
 			".dsa-lyric-empty{padding:14px 10px;text-align:center;font-size:11px;color:rgba(255,255,255,0.45)}",
 			".dsa-lyric.active{color:#fbbf24;background:rgba(251,191,36,0.14)}",
 			".dsa-search{display:flex;gap:6px;margin-top:8px}",
@@ -719,6 +849,26 @@ window.__ModuleLoader__.load({
 			}));
 		}
 
+		// 常见「分享」图标（三个节点连线，Feather share-2 风格），与播放模式图标同为描边 SVG
+		function ShareIcon() {
+			return h("svg", {
+				width: 15,
+				height: 15,
+				viewBox: "0 0 24 24",
+				fill: "none",
+				stroke: "currentColor",
+				strokeWidth: 2,
+				strokeLinecap: "round",
+				strokeLinejoin: "round"
+			}, [
+				h("circle", { key: "a", cx: 18, cy: 5, r: 3 }),
+				h("circle", { key: "b", cx: 6, cy: 12, r: 3 }),
+				h("circle", { key: "c", cx: 18, cy: 19, r: 3 }),
+				h("line", { key: "l1", x1: 8.59, y1: 13.51, x2: 15.42, y2: 17.49 }),
+				h("line", { key: "l2", x1: 15.41, y1: 6.51, x2: 8.59, y2: 10.49 })
+			]);
+		}
+
 		function readyDot(state) {
 			if (!state) return "wait";
 			if (!state.musicApiUp) return "bad";
@@ -843,7 +993,10 @@ window.__ModuleLoader__.load({
 			var [busy, setBusy] = React.useState(false);
 			var [lrc, setLrc] = React.useState(null); // [{t,text}] 当前歌歌词
 			var [lyricsOpen, setLyricsOpen] = React.useState(false); // 展开视图歌词面板
+			var [shareOpen, setShareOpen] = React.useState(false); // 微信分享面板
+			var [kScroll, setKScroll] = React.useState(false); // 卡拉OK当前行横向跟随（文字超宽时滚动窗口跟高亮边缘）
 			var lyricsRef = React.useRef(null); // 歌词面板滚动容器
+			var lyricManualAt = React.useRef(0); // 用户手动滚动时间戳（5s 内暂停自动跟随）
 			var [artistInfo, setArtistInfo] = React.useState(null); // {id, avatar}
 			var [ambientColor, setAmbientColor] = React.useState(null); // 当前唱片取色；失败时由角色本色回退
 			var noticeTimer = React.useRef(null);
@@ -1396,7 +1549,13 @@ window.__ModuleLoader__.load({
 			var [bubbleMaxW, setBubbleMaxW] = React.useState(230);
 			var [overflowing, setOverflowing] = React.useState(false); // 歌词溢出→marquee 流动
 			// 歌词行与宠物锚点（展开/收起都计算，供测宽 effect 使用）
-			var position = state && state.playback ? state.playback.position : null;
+			// 进度以本地 <audio> timeupdate 实时值为准：服务端上报值要经过「2s 上报 + 1.5s 轮询」
+			// 两级延迟（最多滞后 ~3.5s），用来定位歌词会导致「一句唱完才显示字幕」；且切歌瞬间
+			// audio 归零时服务端仍持旧曲位置，回退会闪出上一句——本地值无条件优先，服务端值仅作
+			// 本地值缺失（极早期 state 未就绪）时的兜底。
+			var position = prog && typeof prog.pos === "number"
+				? prog.pos
+				: (state && state.playback ? state.playback.position : null);
 			var line = currentLrcLine(lrc, position);
 			// 当前歌词行索引（面板高亮 + 自动滚动用）
 			var curIdx = -1;
@@ -1405,6 +1564,8 @@ window.__ModuleLoader__.load({
 					if (lrc[li].t <= position) curIdx = li; else break;
 				}
 			}
+			// 卡拉 OK 填充比例（0~1）：只作用于当前行，随本地实时进度推进（常开，无开关）
+			var karaokePct = curIdx >= 0 ? karaokeProgress(lrc, curIdx, position) : 0;
 			// 宠物台词/通知优先（agent 播报），其次歌词
 			var isNotice = Boolean(state && state.notice);
 			var bubbleText = isNotice
@@ -1443,19 +1604,50 @@ window.__ModuleLoader__.load({
 				return function () { window.removeEventListener("resize", measure); };
 			}, [bubbleText, bubbleMaxW, collapsed, pos, petScale]);
 
-			// 歌词面板：当前行移出可视区才自动滚回中间（用户手动翻阅时不打扰）
+			// 歌词面板纵向跟随（KTV 式）：当前行锚定在面板上方约 45% 处，随句内进度
+			// 缓慢连续上移（零跳变），行自然越过锚点前完全不滚动（短歌词/开头几句不动）；
+			// 用户手动翻阅（滚轮/触摸）后 5 秒内暂停自动跟随，不打扰手动浏览。
 			React.useEffect(function () {
 				if (!lyricsOpen || curIdx < 0) return;
 				var panel = lyricsRef.current;
 				if (!panel) return;
+				if (Date.now() - lyricManualAt.current < 5000) return;
 				var el = panel.querySelector('[data-i="' + curIdx + '"]');
 				if (!el) return;
-				var top = el.offsetTop;
-				var bottom = top + el.clientHeight;
-				if (top < panel.scrollTop || bottom > panel.scrollTop + panel.clientHeight) {
-					panel.scrollTo({ top: top - (panel.clientHeight - el.clientHeight) / 2, behavior: "smooth" });
+				var lineH = el.clientHeight;
+				var panelH = panel.clientHeight;
+				if (!(lineH > 0) || !(panelH > 0)) return;
+				// 行在面板内容流中的位置：用 getBoundingClientRect 相减，避免 offsetParent
+				// 坐标系错位（错位会导致过早滚动 + 目标过冲、高亮行被滚出视野）
+				var contentTop = el.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop;
+				var ANCHOR = 0.45;
+				var desired = contentTop + karaokePct * lineH - panelH * ANCHOR;
+				var max = Math.max(0, panel.scrollHeight - panelH);
+				var target = Math.max(0, Math.min(max, desired));
+				if (Math.abs(panel.scrollTop - target) > 0.5) {
+					panel.scrollTo({ top: target, behavior: "smooth" });
 				}
-			}, [lyricsOpen, curIdx]);
+			}, [lyricsOpen, curIdx, karaokePct]);
+
+			// 卡拉 OK 横向跟随：当前行文字超宽时，滚动窗口让高亮边缘始终可见（KTV 式），
+			// 高亮走到行尾最后一个字时正好切到下一句；文字不超宽则保持居中、无需滚动。
+			React.useEffect(function () {
+				if (!lyricsOpen || curIdx < 0) return;
+				var panel = lyricsRef.current;
+				if (!panel) return;
+				var lineEl = panel.querySelector('[data-i="' + curIdx + '"]');
+				var wrap = lineEl && lineEl.querySelector(".dsa-lyric-k-wrap");
+				var inner = wrap && wrap.querySelector(".dsa-lyric-karaoke");
+				if (!wrap || !inner) { setKScroll(false); return; }
+				var overflow = inner.scrollWidth > wrap.clientWidth + 1;
+				setKScroll(overflow);
+				if (overflow) {
+					// 高亮边缘（已唱过的位置）保持在窗口 60% 处，窗口内文字随唱逐字左移
+					var edge = karaokePct * inner.scrollWidth;
+					var target = Math.max(0, Math.min(inner.scrollWidth - wrap.clientWidth, edge - wrap.clientWidth * 0.6));
+					if (Math.abs(wrap.scrollLeft - target) > 1) wrap.scrollLeft = target;
+				}
+			}, [lyricsOpen, curIdx, karaokePct]);
 
 			// 已关闭：浮动区域完全不渲染，仅保留侧边栏底部开关作为恢复入口。
 			if (hidden) return null;
@@ -1463,6 +1655,10 @@ window.__ModuleLoader__.load({
 			// 折叠态：会唱歌的宠物（作者形象 + 歌词气泡）
 			if (collapsed) {
 				var petImg = artistInfo && artistInfo.avatar ? artistInfo.avatar : (playing ? playing.albumPic : null);
+				// 气泡里是歌词（非 agent 播报）时套用卡拉 OK 渐变高亮（常开，与面板一致）
+				var bubbleKaraoke = !isNotice && line && lrc && lrc.length > 0 && curIdx >= 0;
+				var bubbleKaraokeStyle = bubbleKaraoke ? { "--k": Math.round(karaokePct * 1000) / 10 + "%" } : null;
+				var bubbleKaraokeCls = bubbleKaraoke ? "dsa-lyric-karaoke" : "";
 				// 气泡锚点随缩放补偿（气泡本身不缩放，锚定在缩放后的宠物边缘）
 				var bubbleOffset = Math.round(74 * petScale);
 				return h("div", {
@@ -1485,10 +1681,10 @@ window.__ModuleLoader__.load({
 						}, [
 							overflowing
 								? h("div", { className: "dsa-marquee", style: { animationDuration: marqueeDur + "s" } }, [
-										h("span", null, bubbleText || ""),
-										h("span", null, bubbleText || "")
+										h("span", { className: bubbleKaraokeCls, style: bubbleKaraokeStyle }, bubbleText || ""),
+										h("span", { className: bubbleKaraokeCls, style: bubbleKaraokeStyle }, bubbleText || "")
 									])
-								: h("span", null, bubbleText || "♪ ~ ♪ ~ ♪"),
+								: h("span", { className: bubbleKaraokeCls, style: bubbleKaraokeStyle }, bubbleText || "♪ ~ ♪ ~ ♪"),
 							h("span", { className: "dsa-pet-bubble-tail" })
 						])
 					]),
@@ -1543,17 +1739,28 @@ window.__ModuleLoader__.load({
 										h("span", null, connLabel)
 									])
 								: null,
+							// 分享：复制网易云公开链接/二维码，发微信给没装插件的好友也能听
+							h("button", {
+								className: "dsa-btn dsa-share" + (shareOpen ? " active" : ""),
+								title: "分享这首歌（复制链接发微信）",
+								disabled: !playing,
+								onClick: function (e) {
+									e.stopPropagation();
+									setShapeMenuOpen(false);
+									setShareOpen(!shareOpen);
+								}
+							}, h(ShareIcon)),
 							// 分裂式变身：主按钮收起为当前宠物；箭头展开静态头像菜单。
 							h("div", { className: "dsa-shape-wrap", onPointerDown: function (e) { e.stopPropagation(); } }, [
 								h("button", {
 									className: "dsa-btn dsa-shape", "data-moony-transform": true,
 									title: "变身为 " + getMoony(petId).name,
-									onClick: function (e) { e.stopPropagation(); setShapeMenuOpen(false); setCollapsed(true); }
+									onClick: function (e) { e.stopPropagation(); setShapeMenuOpen(false); setShareOpen(false); setCollapsed(true); }
 								}, "变身"),
 								h("button", {
 									className: "dsa-btn dsa-shape-arrow", "data-moony-menu-toggle": true,
 									title: "选择其他 Moony", "aria-haspopup": "menu", "aria-expanded": shapeMenuOpen,
-									onClick: function (e) { e.stopPropagation(); setShapeMenuOpen(!shapeMenuOpen); }
+									onClick: function (e) { e.stopPropagation(); setShareOpen(false); setShapeMenuOpen(!shapeMenuOpen); }
 								}, shapeMenuOpen ? "▴" : "▾")
 							])
 						])
@@ -1615,16 +1822,34 @@ window.__ModuleLoader__.load({
 							: null,
 						// 歌词面板（轻量：随播放滚动高亮，点击某行跳转）
 						lyricsOpen && playing
-							? h("div", { ref: lyricsRef, className: "dsa-lyrics" },
+							? h("div", {
+									ref: lyricsRef,
+									className: "dsa-lyrics",
+									onWheel: function () { lyricManualAt.current = Date.now(); },
+									onTouchMove: function () { lyricManualAt.current = Date.now(); }
+								},
 									lrc && lrc.length > 0
 										? lrc.map(function (ln, i) {
+												var isCur = i === curIdx;
+												// 卡拉 OK（常开）：单层文字用 background-clip:text 渐变填充——
+												// 渐变断点随 --k 前进，天然逐字跟唱且不会发生双层文字错位；
+												// 外层 k-wrap 在文字超宽时改为横向跟随滚动（KTV 式），
+												// 保证高亮确实走到行尾最后一个字才切下一句
+												var content = isCur
+													? h("span", { className: "dsa-lyric-k-wrap" + (kScroll ? " scroll" : "") }, [
+															h("span", {
+																className: "dsa-lyric-karaoke",
+																style: { "--k": Math.round(karaokePct * 1000) / 10 + "%" }
+															}, ln.text || "\u00A0")
+														])
+													: (ln.text || "\u00A0");
 												return h("div", {
 													key: i,
 													"data-i": i,
-													className: "dsa-lyric-line" + (i === curIdx ? " cur" : ""),
+													className: "dsa-lyric-line" + (isCur ? " cur karaoke" : ""),
 													title: "点击跳转到此句",
 													onClick: function () { seekTo(ln.t); }
-												}, ln.text || "\u00A0");
+												}, content);
 											})
 										: h("div", { className: "dsa-lyric-empty" }, "暂无歌词"))
 							: null,
@@ -1747,6 +1972,13 @@ window.__ModuleLoader__.load({
 						onToggleAutoMatch: function () {
 							setAutoMatch(function (prev) { var next = !prev; writeAutoMatch(getLocalStorage(), next); return next; });
 						},
+					}) : null,
+					shareOpen && playing ? h(SharePanel, {
+						song: playing,
+						onClose: function () { setShareOpen(false); },
+						onCopied: function (link) {
+							flash("ok", "链接已复制：去微信粘贴即可分享给朋友");
+						}
 					}) : null
 				]);
 		}
@@ -1783,6 +2015,7 @@ window.__ModuleLoader__.load({
 		exports.inject = inject;
 		exports.name = "@dongfang81/dsh-music";
 		exports.parseLrc = parseLrc;
+		exports.karaokeProgress = karaokeProgress;
 		exports.syncMediaSession = syncMediaSession;
 		exports.moonyForAudio = moonyForAudio;
 		exports.petForLyricDensity = petForLyricDensity;
