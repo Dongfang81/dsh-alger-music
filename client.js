@@ -11,7 +11,7 @@
  * 状态经插件服务端路由 /dsh-alger/* 中转（本机音乐 API 不直接暴露给页面）。
  */
 window.__ModuleLoader__.load({
-	id: "dsh-music",
+	id: "@dongfang81/dsh-music",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -1707,7 +1707,7 @@ window.__ModuleLoader__.load({
 		var inject = ["slots"];
 		exports.apply = apply;
 		exports.inject = inject;
-		exports.name = "dsh-music";
+		exports.name = "@dongfang81/dsh-music";
 		exports.parseLrc = parseLrc;
 		exports.syncMediaSession = syncMediaSession;
 		exports.MOONY_CSS = MOONY_CSS;
