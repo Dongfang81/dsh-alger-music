@@ -587,6 +587,21 @@ test('moonyForAudio always maps any active audio to a known pet', () => {
 	assert.equal(moonyForAudio({ bass: 0.3, energy: 0.45, vocal: 0.3 }), 'classic');
 });
 
+test('petForLyricDensity maps instrumental and dense-lyric songs instantly', () => {
+	const { petForLyricDensity } = loadClient();
+	// 纯音乐/极稀疏：1 行歌词 ÷ 4 分钟 = 0.25 行/分钟 → drift
+	assert.equal(petForLyricDensity(1, 240), 'drift');
+	assert.equal(petForLyricDensity(0, 200), null, 'no lyrics at all leaves audio analysis to decide');
+	// 歌词密集：40 行 ÷ 4 分钟 = 10 行/分钟 → chorus
+	assert.equal(petForLyricDensity(40, 240), 'chorus');
+	assert.equal(petForLyricDensity(100, 300), 'chorus');
+	// 中间地带（1–9 行/分钟）→ 交给音频分析
+	assert.equal(petForLyricDensity(10, 240), null);
+	assert.equal(petForLyricDensity(30, 240), null);
+	// 无时长 → 无法判定
+	assert.equal(petForLyricDensity(10, 0), null);
+});
+
 test('idle Classic has a blank face with no image, Emoji, or tail', () => {
 	const { MoonyPet } = loadClient();
 	const tree = MoonyPet({ petId: 'classic', agentStatus: 'idle', mediaUrl: null, isPlaying: false });

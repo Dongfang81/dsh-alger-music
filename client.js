@@ -225,10 +225,15 @@ window.__ModuleLoader__.load({
 					? h("button", {
 							key: "auto-match", type: "button", role: "switch", "aria-checked": autoMatch,
 							className: "dsa-moony-auto" + (autoMatch ? " on" : ""),
-							title: autoMatch ? "自动匹配已开启：听歌时按音频特征推荐角色" : "自动匹配已关闭",
+							title: autoMatch ? "自动匹配已开启：听歌时自动推荐角色" : "自动匹配已关闭",
 							onClick: function (e) { e.stopPropagation(); onToggleAuto(); }
 						}, [
-							h("span", { className: "dsa-moony-auto-copy" }, "听歌自动匹配宠物"),
+							h("span", { className: "dsa-moony-auto-copy" }, [
+								h("span", null, "听歌自动匹配宠物"),
+								autoMatch
+									? h("small", { className: "dsa-moony-auto-status" }, recId ? "推荐：" + getMoony(recId).name : "分析中…")
+									: null
+							]),
 							h("span", { className: "dsa-moony-auto-check" }, autoMatch ? "✓ 开" : "关")
 						])
 					: null,
@@ -398,6 +403,20 @@ window.__ModuleLoader__.load({
 			return "classic";                                    // 均衡兜底
 		}
 		/**
+		 * 歌词密度 → Moony 角色（即时信号，零额外请求、不依赖 Web Audio）：
+		 * 歌词本来就是切歌时拉取的现成数据——纯音乐/极稀疏 → Drift（沉浸漂流）；
+		 * 歌词密集 → Chorus（跟唱共鸣）；中间地带返回 null，交给音频分析补充。
+		 */
+		function petForLyricDensity(lineCount, durationSec) {
+			var n = Number(lineCount) || 0;
+			var d = Number(durationSec) || 0;
+			if (d <= 0 || n <= 0) return null;
+			var perMin = n / (d / 60); // 每分钟歌词行数
+			if (perMin <= 0.4) return "drift";
+			if (perMin >= 9) return "chorus";
+			return null;
+		}
+		/**
 		 * 创建挂在 audio 元素上的音频分析器。
 		 *
 		 * 静音铁律：createMediaElementSource 会把 audio 输出重路由进 Web Audio 图，
@@ -563,7 +582,7 @@ window.__ModuleLoader__.load({
 			".dsa-moony-option.rec{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.12)}.dsa-moony-option.rec .dsa-moony-option-check{color:#34d399;font-weight:700}",
 			".dsa-moony-option{width:100%;height:42px;border:1px solid transparent;border-radius:9px;background:transparent;color:#fff;display:flex;align-items:center;gap:8px;padding:5px 7px;text-align:left;cursor:pointer}.dsa-moony-option:hover{background:rgba(255,255,255,.09)}.dsa-moony-option.on{border-color:rgba(251,191,36,.5);background:rgba(251,146,60,.13)}",
 			".dsa-moony-option-copy{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}.dsa-moony-option-copy strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dsa-moony-option-copy small{margin-top:2px;font-size:9px;color:rgba(255,255,255,.58)}.dsa-moony-option-check{width:14px;color:#fbbf24;font-size:12px;text-align:center}",
-			".dsa-moony-auto{width:100%;height:34px;margin-top:4px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.04);color:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 10px;text-align:left;cursor:pointer}.dsa-moony-auto:hover{background:rgba(255,255,255,.09)}.dsa-moony-auto.on{border-color:rgba(251,191,36,.5);color:#fbbf24}.dsa-moony-auto-copy{font-size:10.5px}.dsa-moony-auto-check{font-size:10px;flex:none;color:rgba(255,255,255,.5)}.dsa-moony-auto.on .dsa-moony-auto-check{color:#fbbf24}",
+			".dsa-moony-auto{width:100%;min-height:34px;margin-top:4px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.04);color:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 10px;text-align:left;cursor:pointer}.dsa-moony-auto:hover{background:rgba(255,255,255,.09)}.dsa-moony-auto.on{border-color:rgba(251,191,36,.5);color:#fbbf24}.dsa-moony-auto-copy{font-size:10.5px;display:flex;flex-direction:column;gap:1px}.dsa-moony-auto-status{font-size:9px;color:rgba(255,255,255,.45)}.dsa-moony-auto.on .dsa-moony-auto-status{color:rgba(251,191,36,.6)}.dsa-moony-auto-check{font-size:10px;flex:none;color:rgba(255,255,255,.5)}.dsa-moony-auto.on .dsa-moony-auto-check{color:#fbbf24}",
 			".dsa-body{padding:2px 12px 12px}",
 			".dsa-controls{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}",
 			".dsa-progress{display:flex;align-items:center;gap:7px;margin-top:6px}",
@@ -776,6 +795,14 @@ window.__ModuleLoader__.load({
 			var [petId, setPetId] = React.useState(function () { return readStoredMoonyId(getLocalStorage()); });
 			var [autoMatch, setAutoMatch] = React.useState(function () { return readAutoMatch(getLocalStorage()); });
 			var [recPetId, setRecPetId] = React.useState(null); // 自动匹配推荐的角色（每首歌重新判定）
+			var saidRecRef = React.useRef(null); // 已开口推荐过的歌曲（每首歌只说一次）
+			// 推荐开口：任何信号（歌词密度/音频分析）给出推荐时宠物都说一句，每首歌一次
+			var announceRec = function (target) {
+				var song = stateRef.current && stateRef.current.playing ? stateRef.current.playing.song : null;
+				if (!song || !target || saidRecRef.current === song.id) return;
+				saidRecRef.current = song.id;
+				post("/dsh-alger/say", { text: "这首适合 " + getMoony(target).name + "，点「变身」试试？" }).catch(function () { /* 忽略 */ });
+			};
 			var selectMoony = function (id) {
 				setPetId(writeStoredMoonyId(getLocalStorage(), id));
 				// 手动选择角色 → 关闭自动匹配（用户显式意愿优先）
@@ -922,7 +949,6 @@ window.__ModuleLoader__.load({
 			var candidateRef = React.useRef(null);
 			var stableCountRef = React.useRef(0);
 			var currentSongRef = React.useRef(null); // 当前分析中的歌曲（切歌时重置）
-			var matchedSongRef = React.useRef(null); // 已完成推荐的歌曲（每首歌只推荐一次）
 			var recentRef = React.useRef([]); // 最近几次采样（取能量最高者当特征，前奏的低能量采样会被主旋律覆盖）
 			var analyzerRef = React.useRef(null); // 已挂载的采样函数（createMediaElementSource 对同一元素只能调一次）
 			var analyzerTimerRef = React.useRef(null);
@@ -946,7 +972,6 @@ window.__ModuleLoader__.load({
 					// 切歌时重置候选与推荐，避免旧歌特征误匹配新歌
 					if (currentSongRef.current !== song.id) {
 						currentSongRef.current = song.id;
-						matchedSongRef.current = null;
 						candidateRef.current = null;
 						stableCountRef.current = 0;
 						recentRef.current = [];
@@ -970,14 +995,7 @@ window.__ModuleLoader__.load({
 					if (stableCountRef.current >= 2) {
 						stableCountRef.current = 0;
 						setRecPetId(target); // 整首歌持续更新：前奏误判会被主旋律覆盖
-						// 开口提示每首歌只说一次（角色变化时）
-						if (matchedSongRef.current !== song.id) {
-							matchedSongRef.current = song.id;
-							var cur = readStoredMoonyId(getLocalStorage());
-							if (cur !== target) {
-								post("/dsh-alger/say", { text: "这首适合 " + getMoony(target).name + "，点「变身」试试？" }).catch(function () { /* 忽略 */ });
-							}
-						}
+						announceRec(target); // 每首歌开口一次（含推荐与当前相同的情况，保证效果可见）
 					}
 				}, 800);
 			};
@@ -1353,7 +1371,17 @@ window.__ModuleLoader__.load({
 				if (!songId || lrcFor.current === songId) return;
 				lrcFor.current = songId;
 				getLyric(songId).then(function (r) {
-					setLrc(r && r.lyric ? parseLrc(r.lyric) : []);
+					var lines = r && r.lyric ? parseLrc(r.lyric) : [];
+					setLrc(lines);
+					// 即时推荐：歌词密度信号（现成数据、零额外请求、不依赖 Web Audio）
+					if (autoMatchRef.current) {
+						var durSec = 0;
+						var st = stateRef.current;
+						if (st && st.playback && st.playback.duration) durSec = Number(st.playback.duration);
+						else if (playing && playing.dt) durSec = Number(playing.dt) / 1000;
+						var p = petForLyricDensity(lines.length, durSec);
+						if (p) { setRecPetId(p); announceRec(p); }
+					}
 				}).catch(function () { setLrc([]); });
 			}, [songId]);
 			React.useEffect(function () {
@@ -1769,6 +1797,7 @@ window.__ModuleLoader__.load({
 		exports.parseLrc = parseLrc;
 		exports.syncMediaSession = syncMediaSession;
 		exports.moonyForAudio = moonyForAudio;
+		exports.petForLyricDensity = petForLyricDensity;
 		exports.MOONY_CSS = MOONY_CSS;
 		exports.MOONY_CATALOG = MOONY_CATALOG;
 		exports.MOONY_STATUS = MOONY_STATUS;
