@@ -23,7 +23,8 @@
     "README.md",
     "docs/IP.md",
     "docs/moony-series.png",
-    "test"
+    "test",
+    "FEATURES.md"
   ],
   "scripts": {
     "check": "node --check index.js && node --check client.js && node --check lib/alger.js && node --check lib/player.js && node --check lib/api-server.js && node --check lib/source-match.js && node --check lib/habits.js",
