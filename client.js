@@ -217,37 +217,29 @@ window.__ModuleLoader__.load({
 			var onSelect = props && typeof props.onSelect === "function" ? props.onSelect : function () {};
 			var autoMatch = Boolean(props && props.autoMatch);
 			var onToggleAuto = props && typeof props.onToggleAutoMatch === "function" ? props.onToggleAutoMatch : function () {};
-			// 自动匹配推荐的角色（仅在有值时渲染「荐」标记，保持无推荐时列表原样）
-			var recId = props && props.recPetId ? getMoony(props.recPetId).id : null;
 			return h("div", { className: "dsa-moony-menu", role: "menu", "aria-label": "选择 Moony" }, [
-				// 自动匹配宠物开关（听歌时按音频特征推荐角色）；仅在有回调时渲染
+				// 自动匹配宠物开关（听歌时自动切换角色）；仅在有回调时渲染
 				typeof props && props && typeof props.onToggleAutoMatch === "function"
 					? h("button", {
 							key: "auto-match", type: "button", role: "switch", "aria-checked": autoMatch,
 							className: "dsa-moony-auto" + (autoMatch ? " on" : ""),
-							title: autoMatch ? "自动匹配已开启：听歌时自动推荐角色" : "自动匹配已关闭",
+							title: autoMatch ? "自动匹配已开启：听歌时自动切换成最合拍的角色" : "自动匹配已关闭",
 							onClick: function (e) { e.stopPropagation(); onToggleAuto(); }
 						}, [
-							h("span", { className: "dsa-moony-auto-copy" }, [
-								h("span", null, "听歌自动匹配宠物"),
-								autoMatch
-									? h("small", { className: "dsa-moony-auto-status" }, recId ? "推荐：" + getMoony(recId).name : "分析中…")
-									: null
-							]),
+							h("span", { className: "dsa-moony-auto-copy" }, "听歌自动匹配宠物"),
 							h("span", { className: "dsa-moony-auto-check" }, autoMatch ? "✓ 开" : "关")
 						])
 					: null,
 				MOONY_CATALOG.map(function (pet) {
 					var selected = pet.id === selectedId;
-					var rec = recId && pet.id === recId;
 					return h("button", {
-						key: pet.id, type: "button", role: "menuitemradio", className: "dsa-moony-option" + (selected ? " on" : "") + (rec ? " rec" : ""),
-						"data-moony-choice": pet.id, "aria-checked": selected, title: pet.name + " · " + pet.role + (rec ? " · 推荐" : ""),
+						key: pet.id, type: "button", role: "menuitemradio", className: "dsa-moony-option" + (selected ? " on" : ""),
+						"data-moony-choice": pet.id, "aria-checked": selected, title: pet.name + " · " + pet.role,
 						onClick: function () { onSelect(pet.id); }
 					}, [
 						MoonyThumbnail({ petId: pet.id }),
 						h("span", { className: "dsa-moony-option-copy" }, [h("strong", null, pet.name), h("small", null, pet.role)]),
-						h("span", { className: "dsa-moony-option-check" }, selected ? "✓" : (rec ? "荐" : ""))
+						h("span", { className: "dsa-moony-option-check" }, selected ? "✓" : "")
 					]);
 				})
 			]);
@@ -578,11 +570,9 @@ window.__ModuleLoader__.load({
 			".dsa-mode-icon{width:24px;height:24px;color:rgba(255,255,255,0.8)}",
 			".dsa-shape-wrap{position:relative;display:flex;align-items:stretch;border-radius:9px;background:linear-gradient(135deg,#fbbf24,#f97316);box-shadow:0 0 10px rgba(251,146,60,0.55),0 2px 8px rgba(0,0,0,0.3);transition:filter .15s,box-shadow .15s}.dsa-shape-wrap:hover{filter:brightness(1.08);box-shadow:0 0 16px rgba(251,146,60,0.8),0 2px 10px rgba(0,0,0,0.35)}",
 			".dsa-shape{font-size:11px;font-weight:700;width:auto;min-width:42px;padding:0 7px;border-radius:9px 0 0 9px;color:#1c1200}.dsa-shape-arrow{width:22px;border-left:1px solid rgba(89,48,0,.25);border-radius:0 9px 9px 0;color:#1c1200;font-size:10px}.dsa-shape:hover,.dsa-shape-arrow:hover{background:rgba(255,255,255,.2)}",
-			".dsa-shape.has-rec{position:relative}.dsa-shape.has-rec::after{content:'';position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#34d399;box-shadow:0 0 8px rgba(52,211,153,.9)}",
-			".dsa-moony-option.rec{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.12)}.dsa-moony-option.rec .dsa-moony-option-check{color:#34d399;font-weight:700}",
 			".dsa-moony-option{width:100%;height:42px;border:1px solid transparent;border-radius:9px;background:transparent;color:#fff;display:flex;align-items:center;gap:8px;padding:5px 7px;text-align:left;cursor:pointer}.dsa-moony-option:hover{background:rgba(255,255,255,.09)}.dsa-moony-option.on{border-color:rgba(251,191,36,.5);background:rgba(251,146,60,.13)}",
 			".dsa-moony-option-copy{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.15}.dsa-moony-option-copy strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dsa-moony-option-copy small{margin-top:2px;font-size:9px;color:rgba(255,255,255,.58)}.dsa-moony-option-check{width:14px;color:#fbbf24;font-size:12px;text-align:center}",
-			".dsa-moony-auto{width:100%;min-height:34px;margin-top:4px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.04);color:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 10px;text-align:left;cursor:pointer}.dsa-moony-auto:hover{background:rgba(255,255,255,.09)}.dsa-moony-auto.on{border-color:rgba(251,191,36,.5);color:#fbbf24}.dsa-moony-auto-copy{font-size:10.5px;display:flex;flex-direction:column;gap:1px}.dsa-moony-auto-status{font-size:9px;color:rgba(255,255,255,.45)}.dsa-moony-auto.on .dsa-moony-auto-status{color:rgba(251,191,36,.6)}.dsa-moony-auto-check{font-size:10px;flex:none;color:rgba(255,255,255,.5)}.dsa-moony-auto.on .dsa-moony-auto-check{color:#fbbf24}",
+			".dsa-moony-auto{width:100%;height:34px;margin-top:4px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.04);color:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 10px;text-align:left;cursor:pointer}.dsa-moony-auto:hover{background:rgba(255,255,255,.09)}.dsa-moony-auto.on{border-color:rgba(251,191,36,.5);color:#fbbf24}.dsa-moony-auto-copy{font-size:10.5px}.dsa-moony-auto-check{font-size:10px;flex:none;color:rgba(255,255,255,.5)}.dsa-moony-auto.on .dsa-moony-auto-check{color:#fbbf24}",
 			".dsa-body{padding:2px 12px 12px}",
 			".dsa-controls{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}",
 			".dsa-progress{display:flex;align-items:center;gap:7px;margin-top:6px}",
@@ -794,14 +784,26 @@ window.__ModuleLoader__.load({
 			stateRef.current = state;
 			var [petId, setPetId] = React.useState(function () { return readStoredMoonyId(getLocalStorage()); });
 			var [autoMatch, setAutoMatch] = React.useState(function () { return readAutoMatch(getLocalStorage()); });
-			var [recPetId, setRecPetId] = React.useState(null); // 自动匹配推荐的角色（每首歌重新判定）
-			var saidRecRef = React.useRef(null); // 已开口推荐过的歌曲（每首歌只说一次）
-			// 推荐开口：任何信号（歌词密度/音频分析）给出推荐时宠物都说一句，每首歌一次
-			var announceRec = function (target) {
-				var song = stateRef.current && stateRef.current.playing ? stateRef.current.playing.song : null;
-				if (!song || !target || saidRecRef.current === song.id) return;
-				saidRecRef.current = song.id;
-				post("/dsh-alger/say", { text: "这首适合 " + getMoony(target).name + "，点「变身」试试？" }).catch(function () { /* 忽略 */ });
+			// 自动匹配变身：信号（歌词密度/音频分析）确定角色后【直接切换】宠物并开口说明。
+			// 用户开启自动匹配即表示交给月宝儿管理，不再询问；手动选角会关闭自动匹配。
+			var applyPetSwitch = function (target) {
+				if (!target) return;
+				var cur = readStoredMoonyId(getLocalStorage());
+				if (cur === target) return;
+				setPetId(writeStoredMoonyId(getLocalStorage(), target));
+				var roleLines = {
+					"bass": "这低音，我来扛！",
+					"pulse": "节拍来了，跟上我！",
+					"hush": "嘘…安静听。",
+					"chorus": "一起唱～",
+					"echo": "这首歌，有点回忆的味道。",
+					"drift": "漂在这旋律里吧。",
+					"classic": "经典的味道，正合我意。",
+					"spark": "新声音，探索起来！",
+					"loop": "循环再循环～",
+					"vinyl": "黑胶质感，怀旧一下。"
+				};
+				post("/dsh-alger/say", { text: roleLines[target] || ("这首适合我 " + getMoony(target).name + " ！") }).catch(function () { /* 忽略 */ });
 			};
 			var selectMoony = function (id) {
 				setPetId(writeStoredMoonyId(getLocalStorage(), id));
@@ -953,8 +955,7 @@ window.__ModuleLoader__.load({
 			var analyzerRef = React.useRef(null); // 已挂载的采样函数（createMediaElementSource 对同一元素只能调一次）
 			var analyzerTimerRef = React.useRef(null);
 			// 惰性挂载音频分析器并启动采样定时器。行为：识别到稳定风格后
-			// 只「推荐」角色（recPetId 高亮 + 宠物开口提示），不自动变身——
-			// 由用户点「变身」按钮确认切换。
+			// 识别到稳定风格后【直接切换】宠物并开口说明（不询问——开启自动匹配即代表授权）。
 			// 即时性：不跳过前奏——音频数据就绪即采样（800ms 间隔），连续 2 次
 			// 命中同一角色即推荐（约 1.6–2.4s 出结果）；用「最近 3 次采样中能量
 			// 最高的一次」作为特征，前奏低能量段不会压住主旋律。
@@ -975,8 +976,7 @@ window.__ModuleLoader__.load({
 						candidateRef.current = null;
 						stableCountRef.current = 0;
 						recentRef.current = [];
-						setRecPetId(null);
-						return;
+												return;
 					}
 					var feat = sampleAudio();
 					if (!feat) return;
@@ -994,8 +994,7 @@ window.__ModuleLoader__.load({
 					else { candidateRef.current = target; stableCountRef.current = 1; }
 					if (stableCountRef.current >= 2) {
 						stableCountRef.current = 0;
-						setRecPetId(target); // 整首歌持续更新：前奏误判会被主旋律覆盖
-						announceRec(target); // 每首歌开口一次（含推荐与当前相同的情况，保证效果可见）
+						applyPetSwitch(target); // 直接切换，不询问（用户已授权自动匹配）
 					}
 				}, 800);
 			};
@@ -1003,7 +1002,6 @@ window.__ModuleLoader__.load({
 			// 分析器不再只在页面加载时按初始状态挂载）；关闭时清掉当前推荐
 			React.useEffect(function () {
 				if (autoMatch) ensureAnalyzer();
-				else setRecPetId(null);
 			}, [autoMatch]);
 
 			var seekEndTimerRef = React.useRef(null);
@@ -1380,7 +1378,7 @@ window.__ModuleLoader__.load({
 						if (st && st.playback && st.playback.duration) durSec = Number(st.playback.duration);
 						else if (playing && playing.dt) durSec = Number(playing.dt) / 1000;
 						var p = petForLyricDensity(lines.length, durSec);
-						if (p) { setRecPetId(p); announceRec(p); }
+						if (p) applyPetSwitch(p);
 					}
 				}).catch(function () { setLrc([]); });
 			}, [songId]);
@@ -1545,22 +1543,13 @@ window.__ModuleLoader__.load({
 										h("span", null, connLabel)
 									])
 								: null,
-							// 分裂式变身：自动匹配有推荐且不同于当前时，主按钮一键应用推荐；
-							// 否则保持原行为（收起为当前宠物）。
+							// 分裂式变身：主按钮收起为当前宠物；箭头展开静态头像菜单。
 							h("div", { className: "dsa-shape-wrap", onPointerDown: function (e) { e.stopPropagation(); } }, [
 								h("button", {
-									className: "dsa-btn dsa-shape" + (recPetId && recPetId !== petId ? " has-rec" : ""), "data-moony-transform": true,
-									title: recPetId && recPetId !== petId
-										? "变身为推荐的 " + getMoony(recPetId).name
-										: "变身为 " + getMoony(petId).name,
-									onClick: function (e) {
-										e.stopPropagation();
-										if (recPetId && recPetId !== petId) setPetId(writeStoredMoonyId(getLocalStorage(), recPetId));
-										setRecPetId(null);
-										setShapeMenuOpen(false);
-										setCollapsed(true);
-									}
-								}, recPetId && recPetId !== petId ? "推荐" : "变身"),
+									className: "dsa-btn dsa-shape", "data-moony-transform": true,
+									title: "变身为 " + getMoony(petId).name,
+									onClick: function (e) { e.stopPropagation(); setShapeMenuOpen(false); setCollapsed(true); }
+								}, "变身"),
 								h("button", {
 									className: "dsa-btn dsa-shape-arrow", "data-moony-menu-toggle": true,
 									title: "选择其他 Moony", "aria-haspopup": "menu", "aria-expanded": shapeMenuOpen,
@@ -1758,7 +1747,6 @@ window.__ModuleLoader__.load({
 						onToggleAutoMatch: function () {
 							setAutoMatch(function (prev) { var next = !prev; writeAutoMatch(getLocalStorage(), next); return next; });
 						},
-						recPetId: recPetId
 					}) : null
 				]);
 		}

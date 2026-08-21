@@ -552,20 +552,6 @@ test('picker exposes ten static preview options and selects the clicked characte
 	assert.equal(selected, 'vinyl');
 });
 
-test('picker highlights the auto-matched recommended pet with a 荐 badge', () => {
-	const { MoonyPicker } = loadClient();
-	const tree = MoonyPicker({ selectedId: 'classic', recPetId: 'bass', onSelect() {} });
-	const recOption = findNodes(tree, (node) => node.props?.['data-moony-choice'] === 'bass')[0];
-	assert.ok(recOption, 'the recommended pet option exists');
-	assert.match(recOption.props.className, /rec/);
-	assert.match(recOption.props.title, /推荐/);
-	assert.equal(findNodes(tree, (node) => node.props?.children === '荐').length, 1, 'exactly one recommendation badge');
-	assert.equal(findNodes(tree, (node) => node.props?.['data-moony-choice'] === 'classic')[0].props.className.includes('rec'), false, 'non-recommended options are untouched');
-
-	const plain = MoonyPicker({ selectedId: 'classic', onSelect() {} });
-	assert.equal(findNodes(plain, (node) => node.props?.children === '荐').length, 0, 'no recommendation prop means no badges');
-});
-
 test('moonyForAudio always maps any active audio to a known pet', () => {
 	const { moonyForAudio } = loadClient();
 	const pets = new Set(['classic', 'pulse', 'echo', 'drift', 'spark', 'chorus', 'hush', 'loop', 'bass', 'vinyl']);
